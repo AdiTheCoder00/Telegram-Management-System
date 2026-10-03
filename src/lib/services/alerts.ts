@@ -311,7 +311,7 @@ export async function pauseAlert(userId: string, id: string) {
   await getOwnedAlert(userId, id);
   const alert = await db.alert.update({
     where: { id },
-    data: { status: "PAUSED", version: { increment: 1 } },
+    data: { status: "PAUSED", pausedByBulk: false, version: { increment: 1 } },
     include: { bot: botSelect },
   });
   return serializeAlert(alert);
@@ -331,6 +331,7 @@ export async function resumeAlert(userId: string, id: string) {
     where: { id },
     data: {
       status: "ACTIVE",
+      pausedByBulk: false,
       armed: true,
       lastPrice: null,
       lastError: null,
