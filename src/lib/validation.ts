@@ -5,15 +5,37 @@ import { ALERT_STATUSES, CONDITION_TYPES, DELIVERY_STATUSES, EXPIRY_TYPES, PARSE
 
 export const emailSchema = z.string().trim().toLowerCase().email("Enter a valid email address.").max(254);
 
+export const passwordSchema = z
+  .string()
+  .min(10, "Password must be at least 10 characters.")
+  .max(128, "Password is too long.")
+  .regex(/[a-zA-Z]/, "Password must contain a letter.")
+  .regex(/[0-9]/, "Password must contain a number.");
+
+export const timezoneSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .refine((tz) => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Unknown timezone.");
+
 export const registerSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").max(80),
   email: emailSchema,
-  password: z
-    .string()
-    .min(10, "Password must be at least 10 characters.")
-    .max(128, "Password is too long.")
-    .regex(/[a-zA-Z]/, "Password must contain a letter.")
-    .regex(/[0-9]/, "Password must contain a number."),
+  password: passwordSchema,
+  /** Browser-detected IANA zone; invalid values fall back to UTC rather than failing sign-up. */
+  timezone: timezoneSchema.optional().catch(undefined),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Enter your current password.").max(128),
+  newPassword: passwordSchema,
 });
 
 export const loginSchema = z.object({
@@ -142,19 +164,7 @@ export const priceWebhookSchema = z.union([priceWebhookItem, z.object({ prices: 
 
 export const settingsSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
-  timezone: z
-    .string()
-    .trim()
-    .max(64)
-    .refine((tz) => {
-      try {
-        new Intl.DateTimeFormat("en-US", { timeZone: tz });
-        return true;
-      } catch {
-        return false;
-      }
-    }, "Unknown timezone.")
-    .optional(),
+  timezone: timezoneSchema.optional(),
 });
 
 export const apiKeyCreateSchema = z.object({ name: z.string().trim().min(1).max(60) });

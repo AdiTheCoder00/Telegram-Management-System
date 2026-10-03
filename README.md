@@ -70,6 +70,8 @@ npm run db:seed     # instruments: XAUUSD, BTCUSD, EURUSD, GBPUSD, NAS100, US30,
 
 Use `npm run db:migrate` (`prisma migrate dev`) when you change `prisma/schema.prisma`.
 
+**After any migration, restart `npm run dev` and the worker.** Running processes keep the Prisma client they started with. A new column would otherwise surface as "Something went wrong" (the log shows `Unknown argument`).
+
 ## 5. Start Redis (optional)
 
 ```bash
@@ -83,6 +85,10 @@ Without `REDIS_URL` everything still works. Deliveries are written to the `Teleg
 ```bash
 npm run dev          # http://localhost:3000
 ```
+
+**First run:** open the app and create the **owner account** (you're redirected to `/register`). It starts in your browser's time zone, which you can change under Settings. Registration then closes: this is a personal installation. Set `ALLOW_REGISTRATION=true` to temporarily allow another account.
+
+Under **Settings → Security** you can change your password (which signs out every other device) and see or sign out signed-in devices. Sessions expire after 30 days without use and are renewed while you use the app.
 
 ## 7. Run the background worker
 
@@ -185,7 +191,8 @@ Scaling: run more `web` replicas freely. Multiple workers are safe. With Redis, 
 ## Security
 
 - Passwords hashed with bcrypt (cost 12). Login timing is equalised for unknown emails.
-- Database-backed sessions. The cookie holds a random 256-bit token (`HttpOnly`, `SameSite=Lax`, `Secure` in production). Only an HMAC of it is stored.
+- Database-backed sessions. The cookie holds a random 256-bit token (`HttpOnly`, `SameSite=Lax`, `Secure` in production). Only an HMAC of it is stored. The database expiry (30-day idle, sliding) is authoritative, expired rows are purged hourly by the worker, and a password change revokes all other sessions.
+- Single-owner registration: closed once the owner exists (enforced in the API with a database lock, not only in the UI).
 - CSRF: every cookie-authenticated mutating request must come from the app's own origin (`Origin`/`Sec-Fetch-Site` check) plus SameSite cookies.
 - Authorization: every query is scoped by `userId`, and other users' resources return 404.
 - Zod validation on every endpoint. Prisma queries are parameterised, and the one raw SQL statement uses a tagged template.
@@ -201,10 +208,14 @@ All endpoints return JSON. Session-authenticated endpoints need the `tam_session
 
 | Method   | Path                                                                   | Description                                                                                  |
 | -------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| POST     | `/api/auth/register`                                                   | `{ name, email, password }` → creates account + session                                      |
+| POST     | `/api/auth/register`                                                   | `{ name, email, password, timezone? }` → owner account + session (403 once an owner exists)  |
 | POST     | `/api/auth/login`                                                      | `{ email, password }`                                                                        |
 | POST     | `/api/auth/logout`                                                     | Ends the session                                                                             |
 | GET      | `/api/auth/me`                                                         | Current user                                                                                 |
+| POST     | `/api/auth/password`                                                   | `{ currentPassword, newPassword }`; signs out all other sessions                             |
+| GET      | `/api/auth/sessions`                                                   | Signed-in devices (`current` marks this one)                                                 |
+| DELETE   | `/api/auth/sessions/:id`                                               | Sign out one device                                                                          |
+| POST     | `/api/auth/sessions/revoke-others`                                     | Sign out every other device                                                                  |
 | GET      | `/api/alerts?q=&status=&symbol=&botId=`                                | List alerts (with current price)                                                             |
 | POST     | `/api/alerts`                                                          | Create alert (body below)                                                                    |
 | GET      | `/api/alerts/:id`                                                      | Get alert                                                                                    |
