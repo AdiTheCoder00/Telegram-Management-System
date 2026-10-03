@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Schibsted_Grotesk } from "next/font/google";
-import Script from "next/script";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -18,16 +17,16 @@ export const viewport: Viewport = {
   ],
 };
 
-// Applies the saved theme before first paint (no flash). Static string, no user data.
-const themeScript = `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||((!t||t==='system')&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d)}catch(e){}})()`;
+// Applies the saved theme before first paint (no flash). Dark is the default (terminal-style UI); an explicit
+// "light" or "system" choice is respected. Static string, no user data.
+const themeScript = `(function(){try{var t=localStorage.getItem('theme');var d=!t||t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d)}catch(e){}})()`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={font.variable} suppressHydrationWarning>
       <head>
-        <Script id="theme" strategy="beforeInteractive">
-          {themeScript}
-        </Script>
+        {/* Static inline script in the server-rendered head: runs before paint, never re-rendered on the client. */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-dvh font-sans">
         {children}

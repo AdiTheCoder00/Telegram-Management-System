@@ -92,9 +92,9 @@ const THEME_EVENT = "theme-change";
 
 function readTheme(): Theme {
   try {
-    return (localStorage.getItem("theme") as Theme) || "system";
+    return (localStorage.getItem("theme") as Theme) || "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 
@@ -107,9 +107,9 @@ function subscribeTheme(cb: () => void) {
   };
 }
 
-/** Theme preference lives in localStorage (an external store); "system" during SSR. */
+/** Theme preference lives in localStorage (an external store); dark by default (also during SSR). */
 function useTheme() {
-  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "system" as Theme);
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "dark" as Theme);
   const apply = (t: Theme) => {
     try {
       localStorage.setItem("theme", t);
