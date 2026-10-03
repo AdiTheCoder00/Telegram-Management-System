@@ -7,13 +7,15 @@ import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell";
 import { HistoryView } from "@/components/history/history-view";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { AnalyticsView } from "@/components/history/analytics-view";
+import { getAnalytics } from "@/lib/services/analytics";
 
 export const metadata = { title: "Alert history" };
 
 export default async function HistoryPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = (await getCurrentUser())!;
   const sp = Object.fromEntries(Object.entries(await searchParams).filter(([, v]) => v)) as Record<string, string>;
-  const tab = sp.tab === "deliveries" ? "deliveries" : "triggers";
+  const tab = sp.tab === "deliveries" ? "deliveries" : sp.tab === "analytics" ? "analytics" : "triggers";
 
   const parsed = historyQuerySchema.safeParse(sp);
   const q = parsed.success ? parsed.data : historyQuerySchema.parse({});
@@ -29,6 +31,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
       : null,
     db.alertEvent.findMany({ where: { userId: user.id }, distinct: ["symbol"], select: { symbol: true }, orderBy: { symbol: "asc" } }),
   ]);
+  const analytics = tab === "analytics" ? await getAnalytics(user.id, user.timezone) : null;
 
   return (
     <>
@@ -43,6 +46,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
         deliveries={deliveries ? JSON.parse(JSON.stringify(deliveries)) : null}
         symbols={symbols.map((s) => s.symbol)}
         params={sp}
+        analytics={analytics ? <AnalyticsView a={analytics} /> : null}
       />
     </>
   );

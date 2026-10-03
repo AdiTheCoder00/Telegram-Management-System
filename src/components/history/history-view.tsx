@@ -41,8 +41,10 @@ export function HistoryView({
   deliveries,
   symbols,
   params,
+  analytics,
 }: {
-  tab: "triggers" | "deliveries";
+  tab: "triggers" | "deliveries" | "analytics";
+  analytics?: React.ReactNode;
   history: Paged<Json<HistoryItem>> | null;
   deliveries: Paged<Json<DeliveryLogItem>> | null;
   symbols: string[];
@@ -61,14 +63,14 @@ export function HistoryView({
     router.replace(`${pathname}?${p.toString()}`);
   }
 
-  const data = tab === "triggers" ? history : deliveries;
+  const data = tab === "triggers" ? history : tab === "deliveries" ? deliveries : null;
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
     <Card>
       <div className="flex flex-col gap-3 border-b p-4">
         <div className="flex gap-1 rounded-lg bg-muted p-1 self-start" role="tablist">
-          {(["triggers", "deliveries"] as const).map((t) => (
+          {(["triggers", "deliveries", "analytics"] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -79,80 +81,84 @@ export function HistoryView({
                 tab === t && "bg-card text-foreground shadow-sm",
               )}
             >
-              {t === "triggers" ? "Triggers" : "Delivery log"}
+              {t === "triggers" ? "Triggers" : t === "deliveries" ? "Delivery log" : "Analytics"}
             </button>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-end gap-3">
-          {tab === "triggers" && (
-            <>
-              <div>
-                <Label htmlFor="h-from" className="text-xs text-muted-foreground">
-                  From
-                </Label>
-                <Input
-                  id="h-from"
-                  type="date"
-                  className="mt-1 w-40"
-                  defaultValue={params.from ?? ""}
-                  onChange={(e) => go({ from: e.target.value || null })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="h-to" className="text-xs text-muted-foreground">
-                  To
-                </Label>
-                <Input
-                  id="h-to"
-                  type="date"
-                  className="mt-1 w-40"
-                  defaultValue={params.to ?? ""}
-                  onChange={(e) => go({ to: e.target.value || null })}
-                />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Symbol</Label>
-                <Select value={params.symbol ?? ALL} onValueChange={(v) => go({ symbol: v })}>
-                  <SelectTrigger className="mt-1 w-36" aria-label="Filter by symbol">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>All symbols</SelectItem>
-                    {symbols.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          )}
-          <div>
-            <Label className="text-xs text-muted-foreground">Delivery</Label>
-            <Select value={params.status ?? ALL} onValueChange={(v) => go({ status: v })}>
-              <SelectTrigger className="mt-1 w-36" aria-label="Filter by delivery status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>Any status</SelectItem>
-                <SelectItem value="SENT">Delivered</SelectItem>
-                <SelectItem value="QUEUED">Queued</SelectItem>
-                <SelectItem value="RETRYING">Retrying</SelectItem>
-                <SelectItem value="FAILED">Failed</SelectItem>
-                <SelectItem value="DEAD_LETTER">Gave up (dead letter)</SelectItem>
-              </SelectContent>
-            </Select>
+        {tab !== "analytics" && (
+          <div className="flex flex-wrap items-end gap-3">
+            {tab === "triggers" && (
+              <>
+                <div>
+                  <Label htmlFor="h-from" className="text-xs text-muted-foreground">
+                    From
+                  </Label>
+                  <Input
+                    id="h-from"
+                    type="date"
+                    className="mt-1 w-40"
+                    defaultValue={params.from ?? ""}
+                    onChange={(e) => go({ from: e.target.value || null })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="h-to" className="text-xs text-muted-foreground">
+                    To
+                  </Label>
+                  <Input
+                    id="h-to"
+                    type="date"
+                    className="mt-1 w-40"
+                    defaultValue={params.to ?? ""}
+                    onChange={(e) => go({ to: e.target.value || null })}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Symbol</Label>
+                  <Select value={params.symbol ?? ALL} onValueChange={(v) => go({ symbol: v })}>
+                    <SelectTrigger className="mt-1 w-36" aria-label="Filter by symbol">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>All symbols</SelectItem>
+                      {symbols.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+            <div>
+              <Label className="text-xs text-muted-foreground">Delivery</Label>
+              <Select value={params.status ?? ALL} onValueChange={(v) => go({ status: v })}>
+                <SelectTrigger className="mt-1 w-36" aria-label="Filter by delivery status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>Any status</SelectItem>
+                  <SelectItem value="SENT">Delivered</SelectItem>
+                  <SelectItem value="QUEUED">Queued</SelectItem>
+                  <SelectItem value="RETRYING">Retrying</SelectItem>
+                  <SelectItem value="FAILED">Failed</SelectItem>
+                  <SelectItem value="DEAD_LETTER">Gave up (dead letter)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {tab === "triggers" && (
+              <label className="flex h-9 items-center gap-2 text-sm">
+                <Switch checked={params.includeTests === "true"} onCheckedChange={(c) => go({ includeTests: c ? "true" : null })} />
+                Include test alerts
+              </label>
+            )}
           </div>
-          {tab === "triggers" && (
-            <label className="flex h-9 items-center gap-2 text-sm">
-              <Switch checked={params.includeTests === "true"} onCheckedChange={(c) => go({ includeTests: c ? "true" : null })} />
-              Include test alerts
-            </label>
-          )}
-        </div>
+        )}
       </div>
+
+      {tab === "analytics" && analytics}
 
       {tab === "triggers" && history && <TriggersTable items={history.items} />}
       {tab === "deliveries" && deliveries && <DeliveriesTable items={deliveries.items} />}
