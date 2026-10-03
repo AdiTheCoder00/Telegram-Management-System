@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertStatusBadge, AlertConditionCell, DeliveryBadge, RelativeTime } from "@/components/status";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { LiveMonitor } from "@/components/monitor/live-monitor";
 import { cn, formatPrice } from "@/lib/utils";
 
 export const metadata = { title: "Dashboard" };
@@ -64,6 +65,8 @@ export default async function DashboardPage() {
           </div>
         </Link>
       </Card>
+
+      <LiveMonitor />
 
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
