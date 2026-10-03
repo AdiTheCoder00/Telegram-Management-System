@@ -30,15 +30,15 @@ npm run worker            # as a separate long-running process (systemd, pm2, do
 
 Required environment (see `.env.example`):
 
-| Variable | Notes |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL |
-| `NEXTAUTH_SECRET` | `openssl rand -base64 32` — signs session tokens |
-| `ENCRYPTION_KEY` | `openssl rand -base64 32` — encrypts bot tokens. **Never change** after bots exist; back it up. |
-| `APP_URL` | public HTTPS URL (origin checks, webhook URLs) |
-| `AUTH_MODE` | `password` on servers (local mode is ignored unless loopback-bound) |
-| `MARKET_DATA_PROVIDER`, `TWELVE_DATA_API_KEY` | real market data |
-| `REDIS_URL` | optional; BullMQ queues and shared rate limits across processes |
+| Variable                                      | Notes                                                                                           |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                | PostgreSQL                                                                                      |
+| `NEXTAUTH_SECRET`                             | `openssl rand -base64 32` — signs session tokens                                                |
+| `ENCRYPTION_KEY`                              | `openssl rand -base64 32` — encrypts bot tokens. **Never change** after bots exist; back it up. |
+| `APP_URL`                                     | public HTTPS URL (origin checks, webhook URLs)                                                  |
+| `AUTH_MODE`                                   | `password` on servers (local mode is ignored unless loopback-bound)                             |
+| `MARKET_DATA_PROVIDER`, `TWELVE_DATA_API_KEY` | real market data                                                                                |
+| `REDIS_URL`                                   | optional; BullMQ queues and shared rate limits across processes                                 |
 
 Run exactly **one** worker unless you use Redis (the interrupted-backtest sweep assumes one worker; triggers and
 deliveries are safe with several).

@@ -5,7 +5,9 @@ These rules are what make live alerts, the debugger and backtests agree.
 ## The canonical candle
 
 ```ts
-{ openTime, closeTime, open, high, low, close, volume | null, volumeType, state }
+{
+  (openTime, closeTime, open, high, low, close, volume | null, volumeType, state);
+}
 ```
 
 - `openTime` is **inclusive**, `closeTime` is **exclusive**: the candle covers `[openTime, closeTime)`.
@@ -24,10 +26,10 @@ an exchange's session.
 
 At an evaluation instant `asOf`:
 
-| Timeframe | CANDLE_CLOSE | EVERY_TICK |
-| --- | --- | --- |
-| base | last **closed** candle (`closeTime <= asOf`) | the **forming** candle (`openTime <= asOf`) |
-| any other | last **closed** candle | last **closed** candle |
+| Timeframe | CANDLE_CLOSE                                 | EVERY_TICK                                  |
+| --------- | -------------------------------------------- | ------------------------------------------- |
+| base      | last **closed** candle (`closeTime <= asOf`) | the **forming** candle (`openTime <= asOf`) |
+| any other | last **closed** candle                       | last **closed** candle                      |
 
 A 1h EMA used by a 5m alert at 10:07 uses the 09:00–10:00 candle, never the forming 10:00 candle. This is the
 no-look-ahead guarantee; it is property-tested for every indicator.

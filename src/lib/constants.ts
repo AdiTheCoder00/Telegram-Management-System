@@ -106,7 +106,7 @@ Time: {{time}}
 
 Alert: {{alert_name}}`;
 
-export const DEFAULT_SYMBOLS = ["XAUUSD", "BTCUSD", "EURUSD", "GBPUSD", "NAS100", "US30"] as const;
+export const DEFAULT_SYMBOLS = ["XAUUSD", "BTCUSD", "EURUSD", "GBPUSD", "NAS100", "US30", "FIXEDVOL100"] as const;
 
 /** Telegram's hard limit on message length (after entity parsing). */
 export const TELEGRAM_MAX_MESSAGE = 4096;

@@ -23,16 +23,16 @@ one PostgreSQL database (Redis optional).
 
 ## Shared engine core (the same code live, in the simulator and in backtests)
 
-| Layer | Module | Responsibility |
-| --- | --- | --- |
-| Market data | `src/lib/market/service.ts` | The **only** way engines get candles: provider → cache → aggregation / ticks / pushed bars → `normalizeCandles` → freshness |
-| Candles | `src/lib/market/candles.ts`, `timeframes.ts` | Canonical candle, UTC buckets, validation, aggregation (no look-ahead) |
-| Indicators | `src/lib/indicators/*` | 21 causal indicators, explicit warm-ups, `INDICATOR_ENGINE_VERSION` |
-| Conditions | `src/lib/conditions/*` | Condition AST, schema + semantic validation, explainable evaluation, fixed windows |
-| Trigger state machine | `src/lib/engine/evaluate.ts` → `decide()` | Once / re-arm / every-time, cooldown, expiry, terminal states |
-| Live engines | `src/lib/engine/engine.ts` (price ticks), `condition-engine.ts` (candles) | Evaluate, then `commitEvaluation()` atomically |
-| Notifications | `src/lib/notifications/*` | Outbox, provider interface, retries, dead letter |
-| Backtests | `src/lib/backtest/*` | History loader + pure replay through the same windows/evaluator/`decide()` |
+| Layer                 | Module                                                                    | Responsibility                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Market data           | `src/lib/market/service.ts`                                               | The **only** way engines get candles: provider → cache → aggregation / ticks / pushed bars → `normalizeCandles` → freshness |
+| Candles               | `src/lib/market/candles.ts`, `timeframes.ts`                              | Canonical candle, UTC buckets, validation, aggregation (no look-ahead)                                                      |
+| Indicators            | `src/lib/indicators/*`                                                    | 21 causal indicators, explicit warm-ups, `INDICATOR_ENGINE_VERSION`                                                         |
+| Conditions            | `src/lib/conditions/*`                                                    | Condition AST, schema + semantic validation, explainable evaluation, fixed windows                                          |
+| Trigger state machine | `src/lib/engine/evaluate.ts` → `decide()`                                 | Once / re-arm / every-time, cooldown, expiry, terminal states                                                               |
+| Live engines          | `src/lib/engine/engine.ts` (price ticks), `condition-engine.ts` (candles) | Evaluate, then `commitEvaluation()` atomically                                                                              |
+| Notifications         | `src/lib/notifications/*`                                                 | Outbox, provider interface, retries, dead letter                                                                            |
+| Backtests             | `src/lib/backtest/*`                                                      | History loader + pure replay through the same windows/evaluator/`decide()`                                                  |
 
 ## Persistence
 

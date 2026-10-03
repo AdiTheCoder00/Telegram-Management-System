@@ -92,7 +92,10 @@ async function restore(file: string) {
       for (const t of order) {
         const rows = data.tables[t];
         for (let i = 0; i < rows.length; i += 2000) {
-          await tx.$executeRawUnsafe(`INSERT INTO "${t}" SELECT * FROM json_populate_recordset(NULL::"${t}", $1::json)`, JSON.stringify(rows.slice(i, i + 2000)));
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "${t}" SELECT * FROM json_populate_recordset(NULL::"${t}", $1::json)`,
+            JSON.stringify(rows.slice(i, i + 2000)),
+          );
         }
         console.log(`  ${t.padEnd(18)} ${rows.length}`);
       }

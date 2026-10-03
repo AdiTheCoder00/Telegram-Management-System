@@ -2,9 +2,14 @@
 
 import { formatDistanceToNowStrict } from "date-fns";
 import { ArrowDownRight, ArrowUpRight, Check, Clock, Equal, X, SlidersHorizontal } from "lucide-react";
+import { useSyncExternalStore } from "react";
 import { Badge } from "@/components/ui/misc";
 import { CONDITION_SHORT, type AlertStatusT, type ConditionTypeT, type DeliveryStatusT } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+
+const subscribe = () => () => {};
+const getHydratedSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 const STATUS: Record<AlertStatusT, { label: string; variant: "up" | "muted" | "signal" | "down" | "default"; dot: string }> = {
   ACTIVE: { label: "Active", variant: "up", dot: "bg-up" },
@@ -75,11 +80,13 @@ export function ConditionLabel({ condition, className }: { condition: ConditionT
 }
 
 export function RelativeTime({ date, fallback = "—" }: { date: string | Date | null | undefined; fallback?: string }) {
+  const hydrated = useSyncExternalStore(subscribe, getHydratedSnapshot, getServerSnapshot);
   if (!date) return <span className="text-muted-foreground">{fallback}</span>;
   const d = new Date(date);
+  const absolute = `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
   return (
-    <time dateTime={d.toISOString()} title={d.toLocaleString()} className="text-muted-foreground">
-      {formatDistanceToNowStrict(d, { addSuffix: true })}
+    <time dateTime={d.toISOString()} title={absolute} className="text-muted-foreground">
+      {hydrated ? formatDistanceToNowStrict(d, { addSuffix: true }) : absolute}
     </time>
   );
 }

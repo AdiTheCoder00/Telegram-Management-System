@@ -2,10 +2,10 @@
 
 Two alert kinds share one trigger state machine.
 
-| Kind | Input | Evaluated | Module |
-| --- | --- | --- | --- |
-| `PRICE` | price ticks (polled, webhook, simulator) | on every accepted tick | `engine/engine.ts` → `processPriceTick` |
-| `CONDITIONS` | validated candles via the market-data service | every worker cycle | `engine/condition-engine.ts` |
+| Kind         | Input                                         | Evaluated              | Module                                  |
+| ------------ | --------------------------------------------- | ---------------------- | --------------------------------------- |
+| `PRICE`      | price ticks (polled, webhook, simulator)      | on every accepted tick | `engine/engine.ts` → `processPriceTick` |
+| `CONDITIONS` | validated candles via the market-data service | every worker cycle     | `engine/condition-engine.ts`            |
 
 ## Condition alerts
 
