@@ -71,6 +71,7 @@ export async function listAlerts(userId: string, q: z.infer<typeof alertListQuer
   if (q.status) where.status = q.status === "ACTIVE" ? { in: ["ACTIVE", "COOLDOWN"] } : q.status;
   if (q.symbol) where.symbol = q.symbol;
   if (q.botId) where.telegramBotId = q.botId;
+  if (q.groupId) where.groupId = q.groupId === "none" ? null : q.groupId;
   if (q.q) where.OR = [{ name: { contains: q.q, mode: "insensitive" } }, { symbol: { contains: q.q.toUpperCase() } }];
   const alerts = await db.alert.findMany({ where, include: { bot: botSelect }, orderBy: { createdAt: "desc" }, take: 500 });
   const quotes = await latestQuotesFor(

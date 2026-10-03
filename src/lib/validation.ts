@@ -153,6 +153,7 @@ export const alertListQuerySchema = z.object({
   status: z.enum(ALERT_STATUSES).optional(),
   symbol: symbolSchema.optional(),
   botId: z.string().max(40).optional(),
+  groupId: z.string().max(40).optional(),
 });
 
 export const historyQuerySchema = z.object({

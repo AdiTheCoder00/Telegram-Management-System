@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { LevelLadder } from "@/components/alerts/level-ladder";
 import { ConditionBuilder, defaultTree, describeTree } from "@/components/alerts/condition-builder";
 import { ConditionDebugger } from "@/components/alerts/condition-debugger";
+import { CONDITION_TEMPLATES } from "@/lib/conditions/templates";
 import type { ConditionNode } from "@/lib/conditions/types";
 import { TIMEFRAMES, TIMEFRAME_LABELS, type Timeframe } from "@/lib/market/timeframes";
 import { TelegramBubble } from "@/components/telegram-preview";
@@ -572,6 +573,29 @@ export function AlertForm({
                       : "Checked on the forming candle — earlier, but the candle can still change. At most one trigger per candle."}
                   </p>
                 </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">Start from a template:</span>
+                <Select
+                  value=""
+                  onValueChange={(k) => {
+                    const t = CONDITION_TEMPLATES.find((x) => x.key === k);
+                    if (!t) return;
+                    set("conditionTree", structuredClone(t.tree));
+                    set("timeframe", t.timeframe);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-64" aria-label="Condition template">
+                    <SelectValue placeholder="Choose a template…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONDITION_TEMPLATES.map((t) => (
+                      <SelectItem key={t.key} value={t.key}>
+                        {t.label} <span className="text-muted-foreground">· {t.timeframe}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <ConditionBuilder
                 value={v.conditionTree}

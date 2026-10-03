@@ -272,3 +272,14 @@ describe("re-pointing a context (backtest stepping) equals building a fresh one"
     }
   });
 });
+
+describe("condition templates", () => {
+  it("every template is a valid tree", async () => {
+    const { CONDITION_TEMPLATES } = await import("@/lib/conditions/templates");
+    const { conditionSchema, validateTree } = await import("@/lib/conditions/types");
+    for (const t of CONDITION_TEMPLATES) {
+      const parsed = conditionSchema.parse(t.tree);
+      expect(validateTree(parsed), t.key).toEqual([]);
+    }
+  });
+});

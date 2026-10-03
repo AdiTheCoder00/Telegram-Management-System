@@ -7,6 +7,7 @@ export class ApiError extends Error {
     public status: number,
     public fieldErrors: Record<string, string> = {},
     public code?: string,
+    public details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -44,6 +45,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
       res.status,
       (data.fieldErrors as Record<string, string>) ?? {},
       data.code as string | undefined,
+      data.details as Record<string, unknown> | undefined,
     );
   }
   return data as T;
