@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { RelativeTime } from "@/components/status";
 import { SecurityCard } from "@/components/settings/security-card";
+import { WebhooksCard, type WebhookRow } from "@/components/settings/webhooks-card";
 import { api, ApiError, errorMessage } from "@/lib/client-api";
 
 interface Key {
@@ -48,11 +49,13 @@ export function SettingsView({
   user,
   localMode,
   keys,
+  webhooks,
   appUrl,
 }: {
   user: { name: string | null; email: string; timezone: string };
   localMode: boolean;
   keys: Key[];
+  webhooks: WebhookRow[];
   appUrl: string;
 }) {
   const router = useRouter();
@@ -231,6 +234,8 @@ export function SettingsView({
           </p>
         </div>
       </Card>
+
+      <WebhooksCard webhooks={webhooks} origin={origin} CopyButton={CopyButton} />
 
       <SecurityCard localMode={localMode} />
 

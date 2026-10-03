@@ -129,7 +129,7 @@ describe("Telegram delivery", () => {
     const out = await processDelivery(id);
     expect(out.status).toBe("retry");
     let d = await db.telegramDelivery.findUniqueOrThrow({ where: { id } });
-    expect(d.status).toBe("PENDING");
+    expect(d.status).toBe("RETRYING");
     expect(d.error).toMatch(/temporarily unavailable/i);
 
     // Worker restart / sweep picks it up once due
@@ -138,7 +138,7 @@ describe("Telegram delivery", () => {
     expect(await sweepDueDeliveries()).toBeGreaterThanOrEqual(1);
     d = await db.telegramDelivery.findUniqueOrThrow({ where: { id } });
     expect(d.status).toBe("SENT");
-    // (the sweep may also deliver PENDING rows left by earlier tests — exactly one message is for this alert)
+    // (the sweep may also deliver due rows left by earlier tests — exactly one message is for this alert)
     expect(tg.sent.filter((m) => m.text.includes(a.symbol))).toHaveLength(1);
   });
 

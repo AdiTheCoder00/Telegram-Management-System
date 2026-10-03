@@ -5,7 +5,7 @@ import { logger } from "@/lib/logger";
 /**
  * Notification queue.
  *  - With REDIS_URL: BullMQ queue "telegram" consumed by the worker (src/worker).
- *  - Without Redis: deliveries stay PENDING in the database (transactional outbox) and the worker's
+ *  - Without Redis: deliveries stay QUEUED in the database (transactional outbox) and the worker's
  *    sweep picks them up within ~1s. Callers that need low latency in that mode may process inline.
  *
  * Either way the TelegramDelivery row is the source of truth, so nothing is lost if Redis or the worker restarts.

@@ -62,7 +62,7 @@ export const PARSE_MODE_LABELS: Record<ParseModeT, string> = {
   HTML: "HTML",
 };
 
-export const DELIVERY_STATUSES = ["PENDING", "SENT", "FAILED"] as const;
+export const DELIVERY_STATUSES = ["QUEUED", "SENDING", "SENT", "RETRYING", "FAILED", "DEAD_LETTER"] as const;
 export type DeliveryStatusT = (typeof DELIVERY_STATUSES)[number];
 
 export const COOLDOWN_PRESETS = [
@@ -76,8 +76,13 @@ export const COOLDOWN_PRESETS = [
 
 export const TEMPLATE_VARIABLES = [
   { key: "symbol", description: "Instrument symbol" },
-  { key: "current_price", description: "Price that triggered the alert" },
-  { key: "target_price", description: "Alert target" },
+  { key: "price", description: "Price that triggered the alert" },
+  { key: "target", description: "Alert target (— for condition alerts)" },
+  { key: "current_price", description: "Same as {{price}}" },
+  { key: "target_price", description: "Same as {{target}}" },
+  { key: "timeframe", description: "Alert timeframe, e.g. 5m" },
+  { key: "trigger_reason", description: "Why it triggered" },
+  { key: "indicator_values", description: "Indicator readings at the trigger" },
   { key: "condition", description: "Condition, e.g. Price Above" },
   { key: "alert_name", description: "Name of the alert" },
   { key: "time", description: "Trigger time (HH:mm:ss)" },
@@ -101,7 +106,7 @@ Time: {{time}}
 
 Alert: {{alert_name}}`;
 
-export const DEFAULT_SYMBOLS = ["XAUUSD", "BTCUSD", "EURUSD", "GBPUSD", "NAS100", "US30"] as const;
+export const DEFAULT_SYMBOLS = ["XAUUSD", "BTCUSD", "EURUSD", "GBPUSD", "NAS100", "US30", "FIXEDVOL100"] as const;
 
 /** Telegram's hard limit on message length (after entity parsing). */
 export const TELEGRAM_MAX_MESSAGE = 4096;

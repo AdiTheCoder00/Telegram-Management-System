@@ -17,6 +17,8 @@ export class BinanceProvider implements MarketDataProvider {
   readonly key = "binance";
   readonly label = "Binance";
   readonly description = "Live crypto prices from Binance spot (BTCUSD → BTCUSDT).";
+  /** Price-only source: candles for condition alerts are built from its ticks (volume = tick count). */
+  readonly capabilities = { realtime: "polling" as const, candleTimeframes: [], historyDays: 0, volume: "TICK" as const };
 
   isConfigured() {
     return true;

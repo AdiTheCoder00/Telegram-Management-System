@@ -68,6 +68,9 @@ describe("enable / disable", () => {
     const bot = await makeBot(userId, { enabled: false });
     const input = {
       name: "On disabled bot",
+      kind: "PRICE" as const,
+      timeframe: "5m" as const,
+      evaluationMode: "CANDLE_CLOSE" as const,
       symbol: "XAUUSD",
       dataProvider: "webhook",
       conditionType: "PRICE_ABOVE" as const,
@@ -189,5 +192,39 @@ describe("secret handling", () => {
     spies.forEach((s) => s.mockRestore());
     expect(lines.join("\n")).not.toContain(VALID_TOKEN);
     expect(lines.join("\n")).toContain("[redacted]");
+  });
+});
+
+describe("chat discovery and bot-as-chat guard", () => {
+  it("lists chats the bot has seen, newest first, de-duplicated, without consuming updates", async () => {
+    const { discoverChats } = await import("@/lib/telegram/client");
+    tg.updates = [
+      { update_id: 1, message: { date: 100, chat: { id: 42, type: "private", first_name: "Alex", username: "alex" } } },
+      { update_id: 2, my_chat_member: { date: 200, chat: { id: -1001234567890, type: "supergroup", title: "Trading Alerts" } } },
+      { update_id: 3, message: { date: 300, chat: { id: 42, type: "private", first_name: "Alex", username: "alex" } } },
+    ];
+    const r = await discoverChats(VALID_TOKEN);
+    expect(r.botUsername).toBe("test_alerts_bot");
+    expect(r.chats.map((c) => [c.id, c.title, c.type])).toEqual([
+      ["42", "@alex", "private"],
+      ["-1001234567890", "Trading Alerts", "supergroup"],
+    ]);
+    tg.updates = [];
+  });
+
+  it("explains when a webhook blocks discovery", async () => {
+    const { discoverChats } = await import("@/lib/telegram/client");
+    tg.webhookSet = true;
+    const r = await discoverChats(VALID_TOKEN);
+    tg.webhookSet = false;
+    expect(r.chats).toEqual([]);
+    expect(r.error).toMatch(/webhook/);
+  });
+
+  it("rejects the bot's own username as the destination chat (regression: it used to verify as Connected)", async () => {
+    const bot = await makeBot(userId, { chatId: "@test_alerts_bot", status: "CONNECTED" });
+    const v = await verifyBot(userId, bot.id);
+    expect(v.status).toBe("ERROR");
+    expect(v.lastError).toMatch(/is a bot/);
   });
 });

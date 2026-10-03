@@ -21,11 +21,15 @@ export interface MockTelegram {
   url: string;
   sent: SentMessage[];
   mode: "ok" | "down" | "ratelimit";
+  /** Updates returned by getUpdates (chat discovery). */
+  updates: unknown[];
+  /** Simulates a bot with a webhook set (getUpdates → 409). */
+  webhookSet: boolean;
   close(): Promise<void>;
 }
 
 export async function startMockTelegram(port = 0): Promise<MockTelegram> {
-  const state: MockTelegram = { url: "", sent: [], mode: "ok", close: async () => undefined };
+  const state: MockTelegram = { url: "", sent: [], mode: "ok", updates: [], webhookSet: false, close: async () => undefined };
   let messageId = 1000;
 
   const server = http.createServer((req, res) => {
@@ -55,7 +59,18 @@ export async function startMockTelegram(port = 0): Promise<MockTelegram> {
 
       if (method === "getMe")
         return reply(200, { ok: true, result: { id: 123456789, is_bot: true, first_name: "Test Bot", username: "test_alerts_bot" } });
+      if (method === "getUpdates") {
+        if (state.webhookSet)
+          return reply(409, { ok: false, error_code: 409, description: "Conflict: can't use getUpdates method while webhook is active" });
+        return reply(200, { ok: true, result: state.updates });
+      }
       const chatId = String(payload.chat_id ?? "");
+      // The bot's own chat (its id or @username): getChat works, but a bot can't message itself.
+      if (chatId === "123456789" || chatId === "@test_alerts_bot") {
+        if (method === "getChat")
+          return reply(200, { ok: true, result: { id: 123456789, type: "private", username: "test_alerts_bot", first_name: "Test Bot" } });
+        return reply(403, { ok: false, error_code: 403, description: "Forbidden: bots can't send messages to bots" });
+      }
       if (chatId === MIGRATED_CHAT)
         return reply(400, {
           ok: false,

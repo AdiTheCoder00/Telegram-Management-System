@@ -32,6 +32,9 @@ const input = (over: Record<string, unknown> = {}) => ({
   expiresAt: null,
   maxTriggers: null,
   status: "ACTIVE" as const,
+  kind: "PRICE" as const,
+  timeframe: "5m" as const,
+  evaluationMode: "CANDLE_CLOSE" as const,
   ...over,
 });
 

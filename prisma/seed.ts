@@ -102,6 +102,15 @@ const instruments = [
     providerSymbol: "SPX",
     decimals: 2,
   },
+  {
+    symbol: "FIXEDVOL100",
+    displayName: "Fixed Volatility 100 Index",
+    assetClass: "synthetic index",
+    exchange: "Deriv",
+    provider: "webhook",
+    providerSymbol: null,
+    decimals: 2,
+  },
 ];
 
 async function main() {

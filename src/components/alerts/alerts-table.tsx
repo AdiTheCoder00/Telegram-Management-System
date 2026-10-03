@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Copy, FlaskConical, Loader2, MoreHorizontal, Pause, Pencil, Play, Plus, Search, Send, Trash2 } from "lucide-react";
+import { Copy, FlaskConical, Loader2, MoreHorizontal, Pause, Pencil, Play, Plus, Search, Send, Trash2, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AlertStatusBadge, ConditionLabel, RelativeTime } from "@/components/status";
+import { AlertStatusBadge, AlertConditionCell, RelativeTime } from "@/components/status";
+import { BulkBar } from "@/components/alerts/bulk-bar";
 import { api, errorMessage } from "@/lib/client-api";
 import { cn, formatPrice } from "@/lib/utils";
 import type { AlertDTO } from "@/lib/services/alerts";
@@ -38,11 +39,13 @@ export function AlertsTable({
   bots,
   symbols,
   filters,
+  groups = [],
 }: {
   alerts: Alert[];
   bots: { id: string; name: string }[];
   symbols: string[];
-  filters: { q?: string; status?: string; symbol?: string; botId?: string };
+  filters: { q?: string; status?: string; symbol?: string; botId?: string; groupId?: string };
+  groups?: { id: string; name: string; alerts: number }[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -52,6 +55,16 @@ export function AlertsTable({
   const [toDelete, setToDelete] = useState<Alert | null>(null);
   const [simulate, setSimulate] = useState<Alert | null>(null);
   const [q, setQ] = useState(filters.q ?? "");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Only ids still on screen count (rows can disappear after a refresh or filter change).
+  const selected = alerts.filter((a) => picked.has(a.id)).map((a) => a.id);
+  const toggle = (id: string) =>
+    setPicked((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   // Keep prices and statuses fresh while the page is open.
   useEffect(() => {
@@ -95,7 +108,8 @@ export function AlertsTable({
     }
   }
 
-  const hasFilters = !!(filters.q || filters.status || filters.symbol || filters.botId);
+  const hasFilters = !!(filters.q || filters.status || filters.symbol || filters.botId || filters.groupId);
+  const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
   return (
     <Card>
@@ -116,7 +130,23 @@ export function AlertsTable({
             aria-label="Search alerts"
           />
         </form>
-        <div className="grid grid-cols-3 gap-2 lg:flex">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:flex">
+          {groups.length > 0 && (
+            <Select value={filters.groupId ?? ALL} onValueChange={(v) => setFilter("groupId", v)}>
+              <SelectTrigger className="lg:w-36" aria-label="Filter by group">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All groups</SelectItem>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name} ({g.alerts})
+                  </SelectItem>
+                ))}
+                <SelectItem value="none">No group</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Select value={filters.status ?? ALL} onValueChange={(v) => setFilter("status", v)}>
             <SelectTrigger className="lg:w-36" aria-label="Filter by status">
               <SelectValue />
@@ -161,6 +191,7 @@ export function AlertsTable({
         </div>
       </div>
 
+      {selected.length > 0 && <BulkBar selected={selected} groups={groups} onDone={() => setPicked(new Set())} />}
       {alerts.length === 0 ? (
         <div className="flex flex-col items-center px-6 py-16 text-center">
           <p className="font-medium">{hasFilters ? "No alerts match these filters" : "No alerts yet"}</p>
@@ -185,6 +216,15 @@ export function AlertsTable({
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
+              <TableHead className="w-8 pr-0">
+                <input
+                  type="checkbox"
+                  aria-label="Select all alerts"
+                  className="size-4 accent-current"
+                  checked={selected.length === alerts.length}
+                  onChange={(e) => setPicked(e.target.checked ? new Set(alerts.map((a) => a.id)) : new Set())}
+                />
+              </TableHead>
               <TableHead>Alert name</TableHead>
               <TableHead>Symbol</TableHead>
               <TableHead>Condition</TableHead>
@@ -205,11 +245,23 @@ export function AlertsTable({
               const isLive = a.status === "ACTIVE" || a.status === "COOLDOWN";
               const toggling = busy === `${a.id}:pause` || busy === `${a.id}:resume`;
               return (
-                <TableRow key={a.id}>
+                <TableRow key={a.id} data-state={picked.has(a.id) ? "selected" : undefined}>
+                  <TableCell className="w-8 pr-0">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${a.name}`}
+                      className="size-4 accent-current"
+                      checked={picked.has(a.id)}
+                      onChange={() => toggle(a.id)}
+                    />
+                  </TableCell>
                   <TableCell className="max-w-56">
                     <Link href={`/alerts/${a.id}/edit`} className="block truncate font-medium hover:underline">
                       {a.name}
                     </Link>
+                    {a.groupId && groupName.get(a.groupId) && (
+                      <span className="block text-xs text-muted-foreground">{groupName.get(a.groupId)}</span>
+                    )}
                     {a.lastError && (
                       <span className="block max-w-56 truncate text-xs text-destructive" title={a.lastError}>
                         {a.lastError}
@@ -218,9 +270,11 @@ export function AlertsTable({
                   </TableCell>
                   <TableCell className="font-semibold">{a.symbol}</TableCell>
                   <TableCell>
-                    <ConditionLabel condition={a.conditionType} />
+                    <AlertConditionCell alert={a} />
                   </TableCell>
-                  <TableCell className="text-right font-medium tabular">{formatPrice(a.targetPrice)}</TableCell>
+                  <TableCell className="text-right font-medium tabular">
+                    {a.kind === "CONDITIONS" ? "—" : formatPrice(a.targetPrice)}
+                  </TableCell>
                   <TableCell className="text-right tabular text-muted-foreground">{formatPrice(a.currentPrice)}</TableCell>
                   <TableCell className="max-w-40 truncate">
                     {a.bot ? a.bot.name : <span className="text-destructive">No bot</span>}
@@ -276,6 +330,13 @@ export function AlertsTable({
                               <Copy /> Duplicate
                             </Link>
                           </DropdownMenuItem>
+                          {a.kind === "CONDITIONS" && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/alerts/${a.id}/debug`}>
+                                <Bug /> Debug conditions
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
                           {a.status === "ACTIVE" ? (
                             <DropdownMenuItem onSelect={() => act(a, "pause")}>
                               <Pause /> Pause

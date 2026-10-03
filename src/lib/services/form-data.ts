@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { defaultProviderKey, listProviders } from "@/lib/market-data/registry";
 import { DEFAULT_TEMPLATE } from "@/lib/constants";
+import { isTimeframe, type Timeframe } from "@/lib/market/timeframes";
 import type { AlertFormValues } from "@/components/alerts/alert-form";
 import type { AlertDTO } from "@/lib/services/alerts";
 
@@ -22,8 +23,12 @@ export function valuesFromAlert(a: AlertDTO, opts: { duplicate?: boolean } = {})
     name: opts.duplicate ? `${a.name} (copy)` : a.name,
     symbol: a.symbol,
     dataProvider: a.dataProvider,
+    kind: a.kind,
+    timeframe: (isTimeframe(a.timeframe) ? a.timeframe : "5m") as Timeframe,
+    evaluationMode: a.evaluationMode,
+    conditionTree: a.conditionTree,
     conditionType: a.conditionType,
-    targetPrice: String(a.targetPrice),
+    targetPrice: a.kind === "CONDITIONS" && !a.targetPrice ? "" : String(a.targetPrice),
     tolerance: a.tolerance ? String(a.tolerance) : "",
     telegramBotId: a.telegramBotId,
     messageTemplate: a.messageTemplate,
@@ -73,6 +78,10 @@ export function blankValues(defaultBotId: string | null, template?: string | nul
     name: t ? `${sym} ${t.name.toLowerCase()}` : "",
     symbol: sym,
     dataProvider: defaultProviderKey(),
+    kind: "PRICE",
+    timeframe: "5m",
+    evaluationMode: "CANDLE_CLOSE",
+    conditionTree: null,
     conditionType: t?.conditionType ?? "PRICE_ABOVE",
     targetPrice: "",
     tolerance: "",

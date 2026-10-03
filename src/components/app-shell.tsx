@@ -19,6 +19,8 @@ import {
   Settings,
   Sun,
   X,
+  FlaskConical,
+  Gauge,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
@@ -40,8 +42,10 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/alerts", label: "Alerts", icon: ListChecks },
   { href: "/alerts/new", label: "Add Alert", icon: Plus },
+  { href: "/backtest", label: "Backtest", icon: FlaskConical },
   { href: "/bots", label: "Telegram Bots", icon: Bot },
   { href: "/history", label: "Alert History", icon: History },
+  { href: "/system", label: "System", icon: Gauge },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -88,9 +92,9 @@ const THEME_EVENT = "theme-change";
 
 function readTheme(): Theme {
   try {
-    return (localStorage.getItem("theme") as Theme) || "system";
+    return (localStorage.getItem("theme") as Theme) || "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 
@@ -103,9 +107,9 @@ function subscribeTheme(cb: () => void) {
   };
 }
 
-/** Theme preference lives in localStorage (an external store); "system" during SSR. */
+/** Theme preference lives in localStorage (an external store); dark by default (also during SSR). */
 function useTheme() {
-  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "system" as Theme);
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "dark" as Theme);
   const apply = (t: Theme) => {
     try {
       localStorage.setItem("theme", t);

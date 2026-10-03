@@ -1,18 +1,37 @@
 import { db } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
 import { logger } from "@/lib/logger";
-import { sendMessage, TelegramError } from "@/lib/telegram/client";
-import { applyChatMigration } from "@/lib/telegram/migration";
+import { TelegramProvider, type NotificationProvider } from "@/lib/notifications/provider";
 import type { DeliveryStatus } from "@/generated/prisma/client";
 
-export const MAX_ATTEMPTS = 6;
+/**
+ * Notification pipeline (M20). Consumes delivery rows created by the alert engine (it never decides whether
+ * an alert triggered) and drives each through:
+ *
+ *   QUEUED ──claim──▶ SENDING ──▶ SENT
+ *                          ├──▶ RETRYING  (transient: network / 5xx / 429; exponential backoff) ──▶ SENDING …
+ *                          ├──▶ FAILED    (permanent: bad token, unknown chat, bot disabled/deleted)
+ *                          └──▶ DEAD_LETTER (transient errors exhausted MAX_ATTEMPTS)
+ *
+ * Claims are conditional updates, so a delivery is sent by at most one worker at a time, however many
+ * queues, sweeps and retries touch it. A failed notification never erases its trigger (the AlertEvent and
+ * its evidence are committed before delivery starts).
+ *
+ * Delivery guarantee: at-least-once. If a process dies after Telegram accepted a message but before the row
+ * was marked SENT, the expired SENDING lock makes it eligible again — a rare duplicate is preferred over a
+ * silently lost alert. Documented in docs/reliability.md.
+ */
+export const MAX_ATTEMPTS = Math.max(1, Number(process.env.TELEGRAM_MAX_RETRIES ?? 6));
 const LOCK_MS = 60_000;
 
 export type ProcessOutcome =
   | { status: "sent"; telegramMessageId: string }
   | { status: "retry"; retryAt: Date; error: string }
   | { status: "failed"; error: string }
-  | { status: "skipped" }; // already processed / locked by another worker
+  | { status: "dead_letter"; error: string }
+  | { status: "skipped" }; // not due, already done, or being sent by another worker
+
+/** Statuses a worker may pick up (SENDING only once its lock has expired — i.e. after a crash). */
+export const DUE_STATUSES: DeliveryStatus[] = ["QUEUED", "RETRYING"];
 
 function backoffMs(attempt: number) {
   return Math.min(5 * 60_000, 2_000 * 2 ** (attempt - 1)); // 2s, 4s, 8s … capped at 5min
@@ -22,90 +41,72 @@ async function syncEventStatus(eventId: string | null, status: DeliveryStatus) {
   if (eventId) await db.alertEvent.update({ where: { id: eventId }, data: { status } }).catch(() => undefined);
 }
 
-/**
- * Sends one TelegramDelivery. Safe to call concurrently and repeatedly (idempotent):
- * the row is claimed with a conditional update, so only one worker sends it.
- * Transient errors (network, 5xx, 429) are rescheduled with exponential backoff;
- * permanent errors (bad token, chat not found) fail immediately and flag the bot/alert.
- */
-export async function processDelivery(id: string): Promise<ProcessOutcome> {
+/** Builds the provider for a delivery's channel (only Telegram today). */
+export type ProviderFactory = (bot: { id: string; encryptedToken: string }, chatId: string) => NotificationProvider;
+const defaultFactory: ProviderFactory = (bot, chatId) =>
+  new TelegramProvider({ botId: bot.id, encryptedToken: bot.encryptedToken, chatId });
+
+export async function processDelivery(id: string, providerFor: ProviderFactory = defaultFactory): Promise<ProcessOutcome> {
   const now = new Date();
   const claimed = await db.telegramDelivery.updateMany({
     where: {
       id,
-      status: "PENDING",
-      nextAttemptAt: { lte: new Date(now.getTime() + 2000) }, // small slack for app/DB clock skew
-      OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }],
+      OR: [
+        { status: { in: DUE_STATUSES }, nextAttemptAt: { lte: new Date(now.getTime() + 2000) } }, // slack for clock skew
+        { status: "SENDING", lockedUntil: { lt: now } }, // crashed mid-send → recover
+      ],
     },
-    data: { lockedUntil: new Date(now.getTime() + LOCK_MS), attempts: { increment: 1 } },
+    data: { status: "SENDING", lockedUntil: new Date(now.getTime() + LOCK_MS), attempts: { increment: 1 } },
   });
   if (claimed.count === 0) return { status: "skipped" };
 
   const d = await db.telegramDelivery.findUniqueOrThrow({ where: { id }, include: { bot: true } });
+  await syncEventStatus(d.alertEventId, "SENDING");
 
-  const fail = async (error: string, errorDetail?: string): Promise<ProcessOutcome> => {
+  const finish = async (status: "FAILED" | "DEAD_LETTER", error: string, errorDetail?: string): Promise<ProcessOutcome> => {
     await db.telegramDelivery.update({
       where: { id },
-      data: { status: "FAILED", error, errorDetail: errorDetail?.slice(0, 1000), lockedUntil: null },
+      data: { status, error, errorDetail: errorDetail?.slice(0, 1000), lockedUntil: null },
     });
-    await syncEventStatus(d.alertEventId, "FAILED");
+    await syncEventStatus(d.alertEventId, status);
     if (d.alertId && !d.isTest) await db.alert.update({ where: { id: d.alertId }, data: { lastError: error } }).catch(() => undefined);
-    return { status: "failed", error };
+    return status === "FAILED" ? { status: "failed", error } : { status: "dead_letter", error };
   };
 
-  if (!d.bot) return fail("The Telegram bot for this alert was deleted. Assign another bot to the alert.");
+  if (!d.bot) return finish("FAILED", "The Telegram bot for this alert was deleted. Assign another bot to the alert.", "bot_deleted");
   // Disabled bots send nothing. The trigger itself stays recorded; only this delivery fails.
   if (!d.bot.enabled)
-    return fail("The Telegram bot is disabled, so this notification was not sent. Enable the bot to resume notifications.", "bot_disabled");
+    return finish(
+      "FAILED",
+      "The Telegram bot is disabled, so this notification was not sent. Enable the bot to resume notifications.",
+      "bot_disabled",
+    );
 
-  let token: string;
+  let result;
   try {
-    token = decrypt(d.bot.encryptedToken);
+    result = await providerFor(d.bot, d.chatId).send({ deliveryId: id, text: d.message, parseMode: d.parseMode, isTest: d.isTest });
   } catch (err) {
-    logger.error("Failed to decrypt bot token (ENCRYPTION_KEY changed?)", { botId: d.bot.id, err });
-    return fail("The stored bot token could not be read. Please re-enter the bot token.", "decrypt_failed");
+    // A provider bug must not crash the worker or strand the row in SENDING.
+    logger.error("Notification provider threw", { deliveryId: id, err });
+    result = {
+      ok: false as const,
+      retryable: true,
+      userMessage: "Sending failed unexpectedly; it will be retried.",
+      detail: String(err),
+      destinationBroken: false,
+    };
   }
 
-  const bot = d.bot;
-  let chatId = d.chatId;
-  const notes: string[] = [];
-  // Sends once; if Telegram reports that the group became a supergroup, moves the bot to the new chat ID
-  // (the old one is permanently dead) and resends once to the new chat.
-  const send = async (mode: typeof d.parseMode) => {
-    try {
-      return await sendMessage(token, chatId, d.message, mode);
-    } catch (err) {
-      if (err instanceof TelegramError && err.kind === "chat_migrated" && err.migrateToChatId && err.migrateToChatId !== chatId) {
-        await applyChatMigration(bot.id, chatId, err.migrateToChatId);
-        notes.push(`Sent to the new Chat ID ${err.migrateToChatId} (was ${chatId}; group upgraded to supergroup).`);
-        chatId = err.migrateToChatId;
-        await db.telegramDelivery.update({ where: { id }, data: { chatId } });
-        return await sendMessage(token, chatId, d.message, mode);
-      }
-      throw err;
-    }
-  };
-
-  try {
-    let msg;
-    try {
-      msg = await send(d.parseMode);
-    } catch (err) {
-      // If formatting is invalid, deliver as plain text rather than losing the alert.
-      if (err instanceof TelegramError && err.kind === "parse_error" && d.parseMode !== "PLAIN") {
-        msg = await send("PLAIN");
-        notes.push("Sent as plain text because Telegram could not parse the message formatting.");
-      } else throw err;
-    }
-    const note = notes.length ? notes.join(" ") : null;
+  if (result.ok) {
     await db.telegramDelivery.update({
       where: { id },
       data: {
         status: "SENT",
-        telegramMessageId: String(msg.message_id),
+        telegramMessageId: result.providerMessageId,
         sentAt: new Date(),
         lockedUntil: null,
-        error: note,
+        error: result.notes.length ? result.notes.join(" ") : null,
+        ...(result.destinationChanged ? { chatId: result.destinationChanged } : {}),
       },
     });
     await syncEventStatus(d.alertEventId, "SENT");
@@ -113,46 +114,49 @@ export async function processDelivery(id: string): Promise<ProcessOutcome> {
       .update({ where: { id: d.bot.id }, data: { status: "CONNECTED", lastError: null, lastCheckedAt: new Date() } })
       .catch(() => undefined);
     if (d.alertId && !d.isTest) await db.alert.update({ where: { id: d.alertId }, data: { lastError: null } }).catch(() => undefined);
-    logger.info("Telegram message sent", { deliveryId: id, chatId, messageId: msg.message_id });
-    return { status: "sent", telegramMessageId: String(msg.message_id) };
-  } catch (err) {
-    const tg = err instanceof TelegramError ? err : new TelegramError("network", String(err));
-    const attempts = d.attempts;
-    if (tg.retryable && attempts < MAX_ATTEMPTS) {
-      const delay = tg.retryAfterSec ? tg.retryAfterSec * 1000 : backoffMs(attempts);
-      const retryAt = new Date(Date.now() + delay);
-      await db.telegramDelivery.update({
-        where: { id },
-        data: { nextAttemptAt: retryAt, lockedUntil: null, error: tg.userMessage, errorDetail: tg.description },
-      });
-      logger.warn("Telegram delivery will be retried", { deliveryId: id, attempts, retryAt, kind: tg.kind });
-      return { status: "retry", retryAt, error: tg.userMessage };
-    }
-
-    // Permanent failure: flag the bot so the UI shows Error status.
-    if (["invalid_token", "chat_not_found", "bot_blocked"].includes(tg.kind)) {
-      await db.telegramBot
-        .update({ where: { id: d.bot.id }, data: { status: "ERROR", lastError: tg.userMessage, lastCheckedAt: new Date() } })
-        .catch(() => undefined);
-      if (d.alertId && !d.isTest) await db.alert.update({ where: { id: d.alertId }, data: { status: "ERROR" } }).catch(() => undefined);
-    }
-    logger.error("Telegram delivery failed", { deliveryId: id, kind: tg.kind, description: tg.description });
-    return fail(tg.userMessage, `${tg.kind}: ${tg.description}`);
+    logger.info("Notification sent", { deliveryId: id, messageId: result.providerMessageId });
+    return { status: "sent", telegramMessageId: result.providerMessageId };
   }
+
+  if (result.retryable) {
+    if (d.attempts >= MAX_ATTEMPTS) {
+      logger.error("Notification dead-lettered (retries exhausted)", { deliveryId: id, attempts: d.attempts, detail: result.detail });
+      return finish("DEAD_LETTER", `Gave up after ${d.attempts} attempts: ${result.userMessage}`, result.detail);
+    }
+    const delay = result.retryAfterSec ? result.retryAfterSec * 1000 : backoffMs(d.attempts);
+    const retryAt = new Date(Date.now() + delay);
+    await db.telegramDelivery.update({
+      where: { id },
+      data: { status: "RETRYING", nextAttemptAt: retryAt, lockedUntil: null, error: result.userMessage, errorDetail: result.detail },
+    });
+    await syncEventStatus(d.alertEventId, "RETRYING");
+    logger.warn("Notification will be retried", { deliveryId: id, attempts: d.attempts, retryAt });
+    return { status: "retry", retryAt, error: result.userMessage };
+  }
+
+  if (result.destinationBroken) {
+    await db.telegramBot
+      .update({ where: { id: d.bot.id }, data: { status: "ERROR", lastError: result.userMessage, lastCheckedAt: new Date() } })
+      .catch(() => undefined);
+    if (d.alertId && !d.isTest) await db.alert.update({ where: { id: d.alertId }, data: { status: "ERROR" } }).catch(() => undefined);
+  }
+  logger.error("Notification failed", { deliveryId: id, detail: result.detail });
+  return finish("FAILED", result.userMessage, result.detail);
 }
 
 /**
- * Outbox recovery: picks up deliveries that are due but not being processed — e.g. after a worker
- * restart, a crash mid-send (lock expired), Redis being unavailable, or scheduled retries.
+ * Outbox recovery: picks up deliveries that are due but not being processed — after a worker restart, a crash
+ * mid-send (lock expired), Redis being unavailable, or scheduled retries.
  */
 export async function sweepDueDeliveries(limit = 50, olderThanMs = 0): Promise<number> {
   const now = new Date();
   const due = await db.telegramDelivery.findMany({
     where: {
-      status: "PENDING",
-      nextAttemptAt: { lte: now },
       createdAt: { lte: new Date(now.getTime() - olderThanMs) },
-      OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }],
+      OR: [
+        { status: { in: DUE_STATUSES }, nextAttemptAt: { lte: now } },
+        { status: "SENDING", lockedUntil: { lt: now } },
+      ],
     },
     select: { id: true },
     orderBy: { nextAttemptAt: "asc" },
@@ -165,4 +169,20 @@ export async function sweepDueDeliveries(limit = 50, olderThanMs = 0): Promise<n
     if (r.status !== "skipped") processed++;
   }
   return processed;
+}
+
+/** Re-queues FAILED / DEAD_LETTER notifications (e.g. after fixing the bot). Returns how many. */
+export async function retryFailedDeliveries(userId: string, since = new Date(Date.now() - 7 * 86_400_000)) {
+  const rows = await db.telegramDelivery.findMany({
+    where: { userId, isTest: false, status: { in: ["FAILED", "DEAD_LETTER"] }, createdAt: { gte: since } },
+    select: { id: true, alertEventId: true },
+  });
+  if (!rows.length) return 0;
+  await db.telegramDelivery.updateMany({
+    where: { id: { in: rows.map((r) => r.id) } },
+    data: { status: "QUEUED", attempts: 0, nextAttemptAt: new Date(), lockedUntil: null, error: null, errorDetail: null },
+  });
+  const events = rows.map((r) => r.alertEventId).filter((x): x is string => !!x);
+  if (events.length) await db.alertEvent.updateMany({ where: { id: { in: events } }, data: { status: "QUEUED" } });
+  return rows.length;
 }

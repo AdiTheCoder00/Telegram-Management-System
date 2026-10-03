@@ -15,6 +15,28 @@ Market data ─▶ price tick ─▶ Alert engine ─▶ condition ─▶ trigge
                                 Delivery log ◀── Telegram Bot API ◀── worker ◀── queue / outbox
 ```
 
+## Trading platform features
+
+Beyond single price levels, Levels is a personal alert and backtesting platform:
+
+- **Indicator-condition alerts**: 21 indicators, crossings, candle patterns, trading sessions and several
+  timeframes in one rule set. Rules are evaluated on candle close (default) or intrabar. Starts from templates.
+- **One engine everywhere**: live alerts, the **debugger** (Alerts → ⋯ → Debug conditions) and **backtests** use
+  the same windows, evaluator and trigger state machine. No look-ahead, and "backtest == live" is tested.
+- **Trigger evidence**: History → **Why?** shows exactly which values fired an alert, the candle used, the data
+  source and the alert version.
+- **Backtest** page: forward moves, MFE/MAE, per-trigger evidence and a chart. Runs are reproducible, with a
+  dataset SHA-256 and engine versions.
+- **TradingView webhooks** for prices or OHLC bars (Settings → Webhooks).
+- **Live monitor** (dashboard, SSE), **Analytics** (History → Analytics), **System** page (health, providers,
+  queues, pause/resume all, reconnect, retry failed notifications, audit log).
+- Groups, bulk actions, JSON import/export, immutable alert versions, backups (`npm run db:backup`).
+
+Documentation: [architecture](docs/architecture.md) · [alert engine](docs/alert-engine.md) ·
+[market data](docs/market-data.md) · [candle semantics](docs/candle-semantics.md) ·
+[backtesting](docs/backtesting.md) · [reliability & backups](docs/reliability.md) ·
+[deployment](docs/deployment.md) · [troubleshooting](docs/troubleshooting.md)
+
 ---
 
 ## 1. Install dependencies

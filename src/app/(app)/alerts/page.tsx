@@ -7,6 +7,8 @@ import { alertListQuerySchema } from "@/lib/validation";
 import { PageHeader } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { AlertsTable } from "@/components/alerts/alerts-table";
+import { ImportExport } from "@/components/alerts/bulk-bar";
+import { listGroups } from "@/lib/services/alert-bulk";
 
 export const metadata = { title: "Alerts" };
 
@@ -15,10 +17,11 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const parsed = alertListQuerySchema.safeParse(Object.fromEntries(Object.entries(sp).filter(([, v]) => v)));
   const q = parsed.success ? parsed.data : {};
-  const [alerts, bots, all] = await Promise.all([
+  const [alerts, bots, all, groups] = await Promise.all([
     listAlerts(user.id, q),
     listBots(user.id),
     listAlerts(user.id, {}).then((a) => [...new Set(a.map((x) => x.symbol))].sort()),
+    listGroups(user.id),
   ]);
 
   return (
@@ -27,14 +30,17 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
         title="Alerts"
         description="Every alert you've set up. Pause one with its status toggle, or use the menu to test, duplicate or delete it."
         actions={
-          <Button asChild>
-            <Link href="/alerts/new">
-              <Plus /> Create Alert
-            </Link>
-          </Button>
+          <>
+            <ImportExport />
+            <Button asChild>
+              <Link href="/alerts/new">
+                <Plus /> Create Alert
+              </Link>
+            </Button>
+          </>
         }
       />
-      <AlertsTable alerts={alerts} bots={bots.map((b) => ({ id: b.id, name: b.name }))} symbols={all} filters={q} />
+      <AlertsTable alerts={alerts} bots={bots.map((b) => ({ id: b.id, name: b.name }))} symbols={all} filters={q} groups={groups} />
     </>
   );
 }

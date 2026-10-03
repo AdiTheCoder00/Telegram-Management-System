@@ -9,6 +9,8 @@ export class WebhookProvider implements MarketDataProvider {
   readonly key = "webhook";
   readonly label = "Webhook / TradingView";
   readonly description = "Prices pushed to /api/webhooks/price (e.g. TradingView alerts).";
+  /** Price-only source: candles for condition alerts are built from its ticks (volume = tick count). */
+  readonly capabilities = { realtime: "push" as const, candleTimeframes: [], historyDays: 0, volume: "TICK" as const };
   readonly pushOnly = true;
 
   isConfigured() {

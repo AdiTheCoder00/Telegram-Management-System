@@ -11,6 +11,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LevelLadder } from "@/components/alerts/level-ladder";
+import { ConditionBuilder, defaultTree, describeTree } from "@/components/alerts/condition-builder";
+import { ConditionDebugger } from "@/components/alerts/condition-debugger";
+import { CONDITION_TEMPLATES } from "@/lib/conditions/templates";
+import type { ConditionNode } from "@/lib/conditions/types";
+import { TIMEFRAMES, TIMEFRAME_LABELS, type Timeframe } from "@/lib/market/timeframes";
 import { TelegramBubble } from "@/components/telegram-preview";
 import { api, ApiError, errorMessage } from "@/lib/client-api";
 import {
@@ -61,6 +66,10 @@ export interface AlertFormValues {
   name: string;
   symbol: string;
   dataProvider: string;
+  kind: "PRICE" | "CONDITIONS";
+  timeframe: Timeframe;
+  evaluationMode: "CANDLE_CLOSE" | "EVERY_TICK";
+  conditionTree: ConditionNode | null;
   conditionType: ConditionTypeT;
   targetPrice: string;
   tolerance: string;
@@ -285,9 +294,31 @@ export function AlertForm({
         currentPrice: price.price ?? (targetValid ? target : 0),
         exchange,
         timezone,
+        ...(v.kind === "CONDITIONS"
+          ? {
+              hasTarget: false,
+              timeframe: v.timeframe,
+              conditionLabel: describeTree(v.conditionTree, v.timeframe),
+              triggerReason: "All required conditions satisfied.",
+              indicatorValues: "(values at the trigger candle)",
+            }
+          : {}),
       }),
 
-    [alertId, v.name, v.symbol, v.conditionType, target, targetValid, price.price, exchange, timezone],
+    [
+      alertId,
+      v.name,
+      v.symbol,
+      v.conditionType,
+      target,
+      targetValid,
+      price.price,
+      exchange,
+      timezone,
+      v.kind,
+      v.timeframe,
+      v.conditionTree,
+    ],
   );
   const rendered = useMemo(
     () => renderTemplate(v.messageTemplate, previewVars, v.parseMode),
@@ -318,8 +349,12 @@ export function AlertForm({
       name: v.name,
       symbol: v.symbol,
       dataProvider: v.dataProvider,
+      kind: v.kind,
+      timeframe: v.timeframe,
+      evaluationMode: v.evaluationMode,
+      conditionTree: v.kind === "CONDITIONS" ? v.conditionTree : undefined,
       conditionType: v.conditionType,
-      targetPrice: v.targetPrice,
+      targetPrice: v.kind === "CONDITIONS" ? undefined : v.targetPrice,
       tolerance: v.conditionType === "PRICE_EQUALS" ? v.tolerance || "0" : "0",
       telegramBotId: v.telegramBotId,
       messageTemplate: v.messageTemplate,
@@ -479,65 +514,179 @@ export function AlertForm({
         {/* 2 ── Condition */}
         <Section n={2} id="s-condition" title="Condition" description="When should the alert fire?">
           <fieldset>
-            <legend className="sr-only">Condition type</legend>
+            <legend className="sr-only">Alert type</legend>
             <div className="grid gap-2 sm:grid-cols-2">
-              {CONDITION_TYPES.map((c) => {
-                const Icon = CONDITION_ICON[c];
-                const tone = c === "PRICE_EQUALS" ? undefined : c.includes("ABOVE") ? "up" : "down";
-                return (
-                  <OptionCard
-                    key={c}
-                    name="conditionType"
-                    value={c}
-                    checked={v.conditionType === c}
-                    onSelect={() => set("conditionType", c)}
-                    title={CONDITION_LABELS[c]}
-                    description={CONDITION_HELP[c]}
-                    icon={<Icon className="size-[18px]" />}
-                    tone={tone}
-                  />
-                );
-              })}
+              <OptionCard
+                name="kind"
+                value="PRICE"
+                checked={v.kind === "PRICE"}
+                onSelect={() => set("kind", "PRICE")}
+                title="Price level"
+                description="One price, checked on every update."
+              />
+              <OptionCard
+                name="kind"
+                value="CONDITIONS"
+                checked={v.kind === "CONDITIONS"}
+                onSelect={() => {
+                  set("kind", "CONDITIONS");
+                  if (!v.conditionTree) set("conditionTree", defaultTree());
+                }}
+                title="Indicator conditions"
+                description="Rules on candles: indicators, crossings, patterns, sessions, several timeframes."
+              />
             </div>
           </fieldset>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="f-targetPrice">Target price</Label>
-              <Input
-                id="f-targetPrice"
-                className="mt-1.5 text-base font-semibold tabular"
-                inputMode="decimal"
-                placeholder="3900"
-                value={v.targetPrice}
-                onChange={(e) => set("targetPrice", e.target.value.replace(/[^0-9.]/g, ""))}
-                aria-invalid={!!errors.targetPrice}
-              />
-              <FieldError msg={errors.targetPrice} />
-              {price.price !== null && (
-                <button
-                  type="button"
-                  className="mt-1.5 text-xs text-muted-foreground underline-offset-2 hover:underline"
-                  onClick={() => set("targetPrice", String(price.price))}
-                >
-                  Use current price {formatPrice(price.price)}
-                </button>
-              )}
-            </div>
-            {v.conditionType === "PRICE_EQUALS" && (
-              <div>
-                <Label htmlFor="f-tolerance">Tolerance (±)</Label>
-                <Input
-                  id="f-tolerance"
-                  className="mt-1.5 tabular"
-                  inputMode="decimal"
-                  placeholder="0.50"
-                  value={v.tolerance}
-                  onChange={(e) => set("tolerance", e.target.value.replace(/[^0-9.]/g, ""))}
-                />
-                <p className="mt-1.5 text-xs text-muted-foreground">Prices rarely hit an exact value — allow a small band.</p>
+          {v.kind === "CONDITIONS" ? (
+            <div className="space-y-4" id="f-conditionTree">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="f-timeframe">Timeframe</Label>
+                  <Select value={v.timeframe} onValueChange={(t) => set("timeframe", t as Timeframe)}>
+                    <SelectTrigger id="f-timeframe" className="mt-1.5">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TIMEFRAMES.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {TIMEFRAME_LABELS[t]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FieldError msg={errors.timeframe} />
+                </div>
+                <div>
+                  <Label htmlFor="f-evaluationMode">Evaluate</Label>
+                  <Select value={v.evaluationMode} onValueChange={(m) => set("evaluationMode", m as AlertFormValues["evaluationMode"])}>
+                    <SelectTrigger id="f-evaluationMode" className="mt-1.5">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CANDLE_CLOSE">On candle close (confirmed)</SelectItem>
+                      <SelectItem value="EVERY_TICK">Intrabar (forming candle)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    {v.evaluationMode === "CANDLE_CLOSE"
+                      ? "Checked once per closed candle — matches backtests exactly; never repaints."
+                      : "Checked on the forming candle — earlier, but the candle can still change. At most one trigger per candle."}
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">Start from a template:</span>
+                <Select
+                  value=""
+                  onValueChange={(k) => {
+                    const t = CONDITION_TEMPLATES.find((x) => x.key === k);
+                    if (!t) return;
+                    set("conditionTree", structuredClone(t.tree));
+                    set("timeframe", t.timeframe);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-64" aria-label="Condition template">
+                    <SelectValue placeholder="Choose a template…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONDITION_TEMPLATES.map((t) => (
+                      <SelectItem key={t.key} value={t.key}>
+                        {t.label} <span className="text-muted-foreground">· {t.timeframe}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <ConditionBuilder
+                value={v.conditionTree}
+                onChange={(t) => set("conditionTree", t)}
+                baseTimeframe={v.timeframe}
+                error={errors.conditionTree}
+              />
+              <div className="rounded-lg border border-dashed p-3">
+                <div className="mb-2 text-sm font-medium">Test these conditions</div>
+                <ConditionDebugger
+                  compact
+                  body={() =>
+                    v.conditionTree
+                      ? {
+                          config: {
+                            symbol: v.symbol,
+                            dataProvider: v.dataProvider,
+                            timeframe: v.timeframe,
+                            evaluationMode: v.evaluationMode,
+                            conditionTree: v.conditionTree,
+                          },
+                        }
+                      : null
+                  }
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              <fieldset>
+                <legend className="sr-only">Condition type</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {CONDITION_TYPES.map((c) => {
+                    const Icon = CONDITION_ICON[c];
+                    const tone = c === "PRICE_EQUALS" ? undefined : c.includes("ABOVE") ? "up" : "down";
+                    return (
+                      <OptionCard
+                        key={c}
+                        name="conditionType"
+                        value={c}
+                        checked={v.conditionType === c}
+                        onSelect={() => set("conditionType", c)}
+                        title={CONDITION_LABELS[c]}
+                        description={CONDITION_HELP[c]}
+                        icon={<Icon className="size-[18px]" />}
+                        tone={tone}
+                      />
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="f-targetPrice">Target price</Label>
+                  <Input
+                    id="f-targetPrice"
+                    className="mt-1.5 text-base font-semibold tabular"
+                    inputMode="decimal"
+                    placeholder="3900"
+                    value={v.targetPrice}
+                    onChange={(e) => set("targetPrice", e.target.value.replace(/[^0-9.]/g, ""))}
+                    aria-invalid={!!errors.targetPrice}
+                  />
+                  <FieldError msg={errors.targetPrice} />
+                  {price.price !== null && (
+                    <button
+                      type="button"
+                      className="mt-1.5 text-xs text-muted-foreground underline-offset-2 hover:underline"
+                      onClick={() => set("targetPrice", String(price.price))}
+                    >
+                      Use current price {formatPrice(price.price)}
+                    </button>
+                  )}
+                </div>
+                {v.conditionType === "PRICE_EQUALS" && (
+                  <div>
+                    <Label htmlFor="f-tolerance">Tolerance (±)</Label>
+                    <Input
+                      id="f-tolerance"
+                      className="mt-1.5 tabular"
+                      inputMode="decimal"
+                      placeholder="0.50"
+                      value={v.tolerance}
+                      onChange={(e) => set("tolerance", e.target.value.replace(/[^0-9.]/g, ""))}
+                    />
+                    <p className="mt-1.5 text-xs text-muted-foreground">Prices rarely hit an exact value — allow a small band.</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </Section>
 
         {/* 3 ── Trigger settings */}
@@ -554,7 +703,11 @@ export function AlertForm({
                   onSelect={() => set("triggerMode", m)}
                   title={TRIGGER_MODE_LABELS[m]}
                   description={
-                    m === "REARM" ? `Fires once, then waits for price to move back ${rearmSide} the target.` : TRIGGER_MODE_HELP[m]
+                    m === "REARM"
+                      ? v.kind === "CONDITIONS"
+                        ? "Fires once, then waits until the conditions are false again."
+                        : `Fires once, then waits for price to move back ${rearmSide} the target.`
+                      : TRIGGER_MODE_HELP[m]
                   }
                 />
               ))}
@@ -810,13 +963,21 @@ export function AlertForm({
             <ReviewRow label="Watch">
               <strong>{v.symbol || "—"}</strong> via {provider?.label ?? v.dataProvider}
             </ReviewRow>
-            <ReviewRow label="Fires when">{conditionSentence(v.conditionType, v.symbol || "price", v.targetPrice)}</ReviewRow>
+            <ReviewRow label="Fires when">
+              {v.kind === "CONDITIONS"
+                ? `${describeTree(v.conditionTree, v.timeframe)} — ${v.timeframe}, ${v.evaluationMode === "CANDLE_CLOSE" ? "on candle close" : "intrabar"}`
+                : conditionSentence(v.conditionType, v.symbol || "price", v.targetPrice)}
+            </ReviewRow>
             <ReviewRow label="Frequency">
               {v.triggerMode === "ONCE"
                 ? "Once, then the alert stops"
                 : v.triggerMode === "REARM"
-                  ? `Once per move — re-arms after price goes back ${rearmSide} ${v.targetPrice || "the target"}`
-                  : "Every price update that meets the condition"}
+                  ? v.kind === "CONDITIONS"
+                    ? "Once per setup — re-arms when the conditions stop matching"
+                    : `Once per move — re-arms after price goes back ${rearmSide} ${v.targetPrice || "the target"}`
+                  : v.kind === "CONDITIONS"
+                    ? "Every evaluation that meets the conditions (max one per candle)"
+                    : "Every price update that meets the condition"}
               , {cooldownText(v.cooldownSeconds)} between messages
             </ReviewRow>
             <ReviewRow label="Expires">
@@ -868,6 +1029,25 @@ export function AlertForm({
 
       <aside className="hidden xl:block">
         <div className="sticky top-24 space-y-4">
+          {v.kind === "PRICE" && (
+            <LevelLadder
+              symbol={v.symbol}
+              current={price.price}
+              target={targetValid ? target : null}
+              condition={v.conditionType}
+              tolerance={Number(v.tolerance) || 0}
+              loading={price.loading}
+              error={price.error}
+              updatedAt={price.updatedAt}
+            />
+          )}
+          <TelegramBubble text={rendered} mode={v.parseMode} botName={bot?.name ?? "Your bot"} time={previewVars.time.slice(0, 5)} />
+        </div>
+      </aside>
+
+      {/* On smaller screens the ladder sits above the form */}
+      {v.kind === "PRICE" && (
+        <div className="order-first xl:hidden">
           <LevelLadder
             symbol={v.symbol}
             current={price.price}
@@ -878,23 +1058,8 @@ export function AlertForm({
             error={price.error}
             updatedAt={price.updatedAt}
           />
-          <TelegramBubble text={rendered} mode={v.parseMode} botName={bot?.name ?? "Your bot"} time={previewVars.time.slice(0, 5)} />
         </div>
-      </aside>
-
-      {/* On smaller screens the ladder sits above the form */}
-      <div className="order-first xl:hidden">
-        <LevelLadder
-          symbol={v.symbol}
-          current={price.price}
-          target={targetValid ? target : null}
-          condition={v.conditionType}
-          tolerance={Number(v.tolerance) || 0}
-          loading={price.loading}
-          error={price.error}
-          updatedAt={price.updatedAt}
-        />
-      </div>
+      )}
     </form>
   );
 }

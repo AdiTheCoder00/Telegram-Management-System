@@ -7,7 +7,7 @@
  *  - REDIS_URL set: BullMQ job scheduler drives price polling (one poller across any number of worker
  *    replicas) and a BullMQ worker sends Telegram messages with rate limiting and retries.
  *  - No Redis: an in-process poll loop + database outbox sweep (good for development / single node).
- * In both modes a periodic outbox sweep recovers anything left PENDING (crash, restart, Redis outage).
+ * In both modes a periodic outbox sweep recovers anything left QUEUED/RETRYING or stuck SENDING (crash, restart, Redis outage).
  *
  * Start with: npm run worker
  */
@@ -21,6 +21,8 @@ import { checkEnv } from "@/lib/env";
 import { purgeExpiredSessions } from "@/lib/services/auth";
 import { processDelivery, sweepDueDeliveries } from "@/lib/notifications/delivery";
 import { pollOnce } from "@/lib/services/prices";
+import { pruneCandles } from "@/lib/market/service";
+import { failInterruptedBacktests, runNextBacktest } from "@/lib/services/backtests";
 import { closeQueues, enqueueDeliveries, ENGINE_QUEUE, TELEGRAM_QUEUE } from "@/lib/queue";
 import { closeRedis } from "@/lib/queue/redis";
 
@@ -106,7 +108,7 @@ async function startWithRedis(url: string) {
     () => engineQueue.close(),
   );
 
-  // Outbox recovery: anything PENDING for >10s that the queue didn't handle.
+  // Outbox recovery: anything due for >10s that the queue didn't handle.
   every(15_000, "outbox sweep", () => sweepDueDeliveries(100, 10_000));
   logger.info("Worker started (BullMQ mode)", { workerId, pollMs: POLL_MS });
 }
@@ -142,6 +144,17 @@ async function main() {
   every(60 * 60_000, "session purge", async () => {
     const n = await purgeExpiredSessions();
     if (n) logger.info("Purged expired sessions", { count: n });
+  });
+  // Backtests: one at a time per worker, claimed atomically (FOR UPDATE SKIP LOCKED). This assumes a single
+  // worker process for the "interrupted" sweep below (personal deployment); runs are idempotent to repeat.
+  const interrupted = await failInterruptedBacktests();
+  if (interrupted) logger.warn("Marked interrupted backtests as failed", { count: interrupted });
+  every(2_000, "backtests", async () => {
+    while (!shuttingDown && (await runNextBacktest()));
+  });
+  every(60 * 60_000, "candle prune", async () => {
+    const n = await pruneCandles();
+    if (n) logger.info("Pruned old candles", { count: n });
   });
   const url = process.env.REDIS_URL;
   if (url) await startWithRedis(url);

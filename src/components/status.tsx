@@ -1,10 +1,15 @@
 "use client";
 
 import { formatDistanceToNowStrict } from "date-fns";
-import { ArrowDownRight, ArrowUpRight, Check, Clock, Equal, X } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Check, Clock, Equal, X, SlidersHorizontal } from "lucide-react";
+import { useSyncExternalStore } from "react";
 import { Badge } from "@/components/ui/misc";
 import { CONDITION_SHORT, type AlertStatusT, type ConditionTypeT, type DeliveryStatusT } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+
+const subscribe = () => () => {};
+const getHydratedSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 const STATUS: Record<AlertStatusT, { label: string; variant: "up" | "muted" | "signal" | "down" | "default"; dot: string }> = {
   ACTIVE: { label: "Active", variant: "up", dot: "bg-up" },
@@ -40,9 +45,21 @@ export function DeliveryBadge({ status }: { status: DeliveryStatusT | null | und
         <X /> Failed
       </Badge>
     );
+  if (status === "DEAD_LETTER")
+    return (
+      <Badge variant="down" title="Retries exhausted — use “Retry failed notifications” in Settings">
+        <X /> Gave up
+      </Badge>
+    );
+  if (status === "RETRYING")
+    return (
+      <Badge variant="signal">
+        <Clock /> Retrying
+      </Badge>
+    );
   return (
     <Badge variant="signal">
-      <Clock /> Pending
+      <Clock /> {status === "SENDING" ? "Sending" : "Queued"}
     </Badge>
   );
 }
@@ -63,11 +80,31 @@ export function ConditionLabel({ condition, className }: { condition: ConditionT
 }
 
 export function RelativeTime({ date, fallback = "—" }: { date: string | Date | null | undefined; fallback?: string }) {
+  const hydrated = useSyncExternalStore(subscribe, getHydratedSnapshot, getServerSnapshot);
   if (!date) return <span className="text-muted-foreground">{fallback}</span>;
   const d = new Date(date);
+  const absolute = `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
   return (
-    <time dateTime={d.toISOString()} title={d.toLocaleString()} className="text-muted-foreground">
-      {formatDistanceToNowStrict(d, { addSuffix: true })}
+    <time dateTime={d.toISOString()} title={absolute} className="text-muted-foreground">
+      {hydrated ? formatDistanceToNowStrict(d, { addSuffix: true }) : absolute}
     </time>
+  );
+}
+
+/** Condition column for alert rows: price-level label, or "Conditions · 5m" for condition-tree alerts. */
+export function AlertConditionCell({
+  alert,
+}: {
+  alert: { kind: string; conditionType: ConditionTypeT; timeframe: string; evaluationMode: string };
+}) {
+  if (alert.kind !== "CONDITIONS") return <ConditionLabel condition={alert.conditionType} />;
+  return (
+    <span
+      className="inline-flex items-center gap-1 font-medium text-muted-foreground"
+      title={alert.evaluationMode === "CANDLE_CLOSE" ? "Evaluated on candle close" : "Evaluated intrabar"}
+    >
+      <SlidersHorizontal className="size-4" />
+      Conditions · {alert.timeframe}
+    </span>
   );
 }
