@@ -21,6 +21,7 @@ import { checkEnv } from "@/lib/env";
 import { purgeExpiredSessions } from "@/lib/services/auth";
 import { processDelivery, sweepDueDeliveries } from "@/lib/notifications/delivery";
 import { pollOnce } from "@/lib/services/prices";
+import { pruneCandles } from "@/lib/market/service";
 import { closeQueues, enqueueDeliveries, ENGINE_QUEUE, TELEGRAM_QUEUE } from "@/lib/queue";
 import { closeRedis } from "@/lib/queue/redis";
 
@@ -142,6 +143,10 @@ async function main() {
   every(60 * 60_000, "session purge", async () => {
     const n = await purgeExpiredSessions();
     if (n) logger.info("Purged expired sessions", { count: n });
+  });
+  every(60 * 60_000, "candle prune", async () => {
+    const n = await pruneCandles();
+    if (n) logger.info("Pruned old candles", { count: n });
   });
   const url = process.env.REDIS_URL;
   if (url) await startWithRedis(url);

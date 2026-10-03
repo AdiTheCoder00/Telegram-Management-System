@@ -1,6 +1,6 @@
 import { Redis } from "ioredis";
 import { db } from "@/lib/db";
-import { getProvider } from "@/lib/market-data/registry";
+import { getProvider, isSynthetic } from "@/lib/market-data/registry";
 
 /**
  * Health checks with honest states. A component is only reported healthy when it was actually verified;
@@ -90,7 +90,7 @@ export async function checkMarketData(): Promise<ComponentHealth> {
       let state: FeedState;
       if (provider?.pushOnly)
         state = "PUSH"; // freshness depends on the external sender; age is reported
-      else if (f.dataProvider === "simulated") state = "SIMULATED";
+      else if (isSynthetic(f.dataProvider)) state = "SIMULATED";
       else if (ageMs === null) state = "NO_DATA";
       else state = ageMs <= maxAge ? "FRESH" : "STALE";
       return { provider: f.dataProvider, symbol: f.symbol, state, ageMs, lastUpdate: at?.toISOString() ?? null };

@@ -17,13 +17,25 @@ async function exchangeFor(symbol: string, provider: string): Promise<string> {
   return exchange ?? getProvider(provider)?.label ?? provider;
 }
 
-type AlertLike = Pick<Alert, "id" | "name" | "symbol" | "conditionType" | "targetPrice" | "messageTemplate" | "parseMode" | "dataProvider">;
+type AlertLike = Pick<
+  Alert,
+  "id" | "name" | "symbol" | "conditionType" | "targetPrice" | "messageTemplate" | "parseMode" | "dataProvider"
+> &
+  Partial<Pick<Alert, "kind" | "timeframe">>;
+
+/** Extra template values from a condition-tree evaluation (M6 variables). */
+export interface MessageExtras {
+  conditionLabel?: string;
+  triggerReason?: string;
+  indicatorValues?: string;
+}
 
 /** Renders an alert's template into the final Telegram message text. */
 export async function buildAlertMessage(
   alert: AlertLike,
-  opts: { price: number; at?: Date; timezone?: string; test?: boolean },
+  opts: { price: number; at?: Date; timezone?: string; test?: boolean; extras?: MessageExtras },
 ): Promise<string> {
+  const conditions = alert.kind === "CONDITIONS";
   const vars = buildVars({
     alertId: alert.id,
     alertName: alert.name,
@@ -34,6 +46,11 @@ export async function buildAlertMessage(
     exchange: await exchangeFor(alert.symbol, alert.dataProvider),
     at: opts.at,
     timezone: opts.timezone,
+    timeframe: conditions ? (alert.timeframe ?? null) : null,
+    hasTarget: !conditions,
+    conditionLabel: opts.extras?.conditionLabel ?? (conditions ? "Custom conditions" : null),
+    triggerReason: opts.extras?.triggerReason ?? null,
+    indicatorValues: opts.extras?.indicatorValues ?? null,
   });
   const body = renderTemplate(alert.messageTemplate, vars, alert.parseMode);
   return opts.test ? testHeader(alert.parseMode) + body : body;

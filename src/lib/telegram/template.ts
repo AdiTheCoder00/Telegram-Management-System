@@ -16,6 +16,13 @@ export interface TemplateContext {
   exchange?: string | null;
   at?: Date;
   timezone?: string;
+  /** Condition-tree alerts: base timeframe, human-readable reason, and indicator readings at the trigger. */
+  timeframe?: string | null;
+  conditionLabel?: string | null;
+  triggerReason?: string | null;
+  indicatorValues?: string | null;
+  /** False for condition alerts without a single price target. */
+  hasTarget?: boolean;
 }
 
 function decimalsFor(n: number) {
@@ -36,16 +43,24 @@ export function buildVars(ctx: TemplateContext): TemplateVars {
   const at = ctx.at ?? new Date();
   const tz = ctx.timezone || "UTC";
   const parts = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, ...opts }).format(at);
-  const pct = ctx.targetPrice ? ((ctx.currentPrice - ctx.targetPrice) / ctx.targetPrice) * 100 : 0;
+  const hasTarget = ctx.hasTarget !== false && ctx.targetPrice > 0;
+  const pct = hasTarget ? ((ctx.currentPrice - ctx.targetPrice) / ctx.targetPrice) * 100 : 0;
+  const price = fmtNumber(ctx.currentPrice);
+  const target = hasTarget ? fmtNumber(ctx.targetPrice) : "—";
   return {
     symbol: ctx.symbol,
-    current_price: fmtNumber(ctx.currentPrice),
-    target_price: fmtNumber(ctx.targetPrice),
-    condition: CONDITION_LABELS[ctx.conditionType],
+    price,
+    current_price: price,
+    target,
+    target_price: target,
+    condition: ctx.conditionLabel ?? CONDITION_LABELS[ctx.conditionType],
+    timeframe: ctx.timeframe ?? "—",
+    trigger_reason: ctx.triggerReason ?? "—",
+    indicator_values: ctx.indicatorValues ?? "—",
     alert_name: ctx.alertName,
     time: parts({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }),
     date: parts({ year: "numeric", month: "2-digit", day: "2-digit" }),
-    percentage_distance: `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`,
+    percentage_distance: hasTarget ? `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%` : "—",
     exchange: ctx.exchange || "—",
     alert_id: ctx.alertId,
   };
@@ -83,8 +98,13 @@ export function testHeader(mode: ParseModeT): string {
 
 export const SAMPLE_VARS: TemplateVars = {
   symbol: "XAUUSD",
+  price: "3901.25",
+  target: "3900",
   current_price: "3901.25",
   target_price: "3900",
+  timeframe: "5m",
+  trigger_reason: "All required conditions satisfied.",
+  indicator_values: "RSI(14) [5m] = 61.3; EMA(50) [1h] = 3912.8",
   condition: "Price Above",
   alert_name: "Gold Breakout Alert",
   time: "14:35:21",

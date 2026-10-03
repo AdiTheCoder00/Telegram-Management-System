@@ -16,6 +16,8 @@ export class CustomRestProvider implements MarketDataProvider {
   readonly key = "custom";
   readonly label = "Custom REST API";
   readonly description = "Your own price endpoint (configure CUSTOM_PRICE_URL).";
+  /** Price-only source: candles for condition alerts are built from its ticks (volume = tick count). */
+  readonly capabilities = { realtime: "polling" as const, candleTimeframes: [], historyDays: 0, volume: "TICK" as const };
 
   isConfigured() {
     return !!process.env.CUSTOM_PRICE_URL;

@@ -14,7 +14,7 @@ const schema = z.object({
   REDIS_URL: z.string().optional(),
   WEBHOOK_SECRET: z.string().optional(),
   CRON_SECRET: z.string().optional(),
-  DEFAULT_MARKET_DATA_PROVIDER: z.string().default("simulated"),
+  DEFAULT_MARKET_DATA_PROVIDER: z.string().default("mock"),
   MARKET_DATA_API_KEY: z.string().optional(),
   CUSTOM_PRICE_URL: z.string().optional(),
   CUSTOM_PRICE_JSON_PATH: z.string().default("price"),
@@ -98,10 +98,11 @@ export function checkEnv(): EnvReport {
         "AUTH_MODE=local is ignored: this server was not started with `npm run dev` / `npm run start:local` (loopback-only), so sign-in stays required.",
       );
   }
-  if (e.DEFAULT_MARKET_DATA_PROVIDER === "simulated")
-    warnings.push("DEFAULT_MARKET_DATA_PROVIDER is 'simulated' (mock prices, not live data).");
-  if (e.DEFAULT_MARKET_DATA_PROVIDER === "twelvedata" && !e.MARKET_DATA_API_KEY)
-    errors.push("DEFAULT_MARKET_DATA_PROVIDER=twelvedata requires MARKET_DATA_API_KEY.");
+  const provider = process.env.MARKET_DATA_PROVIDER || e.DEFAULT_MARKET_DATA_PROVIDER;
+  const tdKey = process.env.TWELVE_DATA_API_KEY || e.MARKET_DATA_API_KEY;
+  if (provider === "mock" || provider === "simulated")
+    warnings.push(`MARKET_DATA_PROVIDER is '${provider}' (synthetic prices, not live market data).`);
+  if (provider === "twelvedata" && !tdKey) errors.push("MARKET_DATA_PROVIDER=twelvedata requires TWELVE_DATA_API_KEY.");
 
   return { errors, warnings };
 }
