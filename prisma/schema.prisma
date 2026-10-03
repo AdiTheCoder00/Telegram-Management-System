@@ -40,6 +40,10 @@ enum AlertStatus {
   TRIGGERED
   EXPIRED
   ERROR
+  /// Saved but not yet activated — never evaluated until activation validation passes.
+  DRAFT
+  /// Post-trigger cooldown window (engine-managed; returns to ACTIVE when the window passes).
+  COOLDOWN
 }
 
 enum ParseMode {
@@ -128,6 +132,8 @@ model TelegramBot {
   botUsername    String?
   chatId         String
   chatTitle      String?
+  /// Disabled bots send nothing (alerts still trigger and are recorded; their deliveries fail as "bot disabled").
+  enabled        Boolean   @default(true)
   status         BotStatus @default(DISCONNECTED)
   lastError      String?
   lastCheckedAt  DateTime? @db.Timestamptz(3)

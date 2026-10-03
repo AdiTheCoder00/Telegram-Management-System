@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 
 const STATUS: Record<AlertStatusT, { label: string; variant: "up" | "muted" | "signal" | "down" | "default"; dot: string }> = {
   ACTIVE: { label: "Active", variant: "up", dot: "bg-up" },
+  COOLDOWN: { label: "Cooldown", variant: "default", dot: "bg-signal" },
+  DRAFT: { label: "Draft", variant: "muted", dot: "border border-muted-foreground bg-transparent" },
   PAUSED: { label: "Paused", variant: "muted", dot: "border border-muted-foreground bg-transparent" },
   TRIGGERED: { label: "Triggered", variant: "signal", dot: "bg-signal" },
   EXPIRED: { label: "Expired", variant: "default", dot: "bg-muted-foreground/60" },

@@ -50,7 +50,7 @@ export const EXPIRY_LABELS: Record<ExpiryTypeT, string> = {
   AFTER_N_TRIGGERS: "Number of triggers",
 };
 
-export const ALERT_STATUSES = ["ACTIVE", "PAUSED", "TRIGGERED", "EXPIRED", "ERROR"] as const;
+export const ALERT_STATUSES = ["ACTIVE", "COOLDOWN", "DRAFT", "PAUSED", "TRIGGERED", "EXPIRED", "ERROR"] as const;
 export type AlertStatusT = (typeof ALERT_STATUSES)[number];
 
 export const PARSE_MODES = ["PLAIN", "MARKDOWN", "MARKDOWN_V2", "HTML"] as const;

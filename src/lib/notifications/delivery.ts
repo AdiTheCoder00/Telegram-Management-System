@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { logger } from "@/lib/logger";
 import { sendMessage, TelegramError } from "@/lib/telegram/client";
+import { applyChatMigration } from "@/lib/telegram/migration";
 import type { DeliveryStatus } from "@/generated/prisma/client";
 
 export const MAX_ATTEMPTS = 6;
@@ -53,6 +54,9 @@ export async function processDelivery(id: string): Promise<ProcessOutcome> {
   };
 
   if (!d.bot) return fail("The Telegram bot for this alert was deleted. Assign another bot to the alert.");
+  // Disabled bots send nothing. The trigger itself stays recorded; only this delivery fails.
+  if (!d.bot.enabled)
+    return fail("The Telegram bot is disabled, so this notification was not sent. Enable the bot to resume notifications.", "bot_disabled");
 
   let token: string;
   try {
@@ -62,18 +66,38 @@ export async function processDelivery(id: string): Promise<ProcessOutcome> {
     return fail("The stored bot token could not be read. Please re-enter the bot token.", "decrypt_failed");
   }
 
+  const bot = d.bot;
+  let chatId = d.chatId;
+  const notes: string[] = [];
+  // Sends once; if Telegram reports that the group became a supergroup, moves the bot to the new chat ID
+  // (the old one is permanently dead) and resends once to the new chat.
+  const send = async (mode: typeof d.parseMode) => {
+    try {
+      return await sendMessage(token, chatId, d.message, mode);
+    } catch (err) {
+      if (err instanceof TelegramError && err.kind === "chat_migrated" && err.migrateToChatId && err.migrateToChatId !== chatId) {
+        await applyChatMigration(bot.id, chatId, err.migrateToChatId);
+        notes.push(`Sent to the new Chat ID ${err.migrateToChatId} (was ${chatId}; group upgraded to supergroup).`);
+        chatId = err.migrateToChatId;
+        await db.telegramDelivery.update({ where: { id }, data: { chatId } });
+        return await sendMessage(token, chatId, d.message, mode);
+      }
+      throw err;
+    }
+  };
+
   try {
     let msg;
-    let note: string | null = null;
     try {
-      msg = await sendMessage(token, d.chatId, d.message, d.parseMode);
+      msg = await send(d.parseMode);
     } catch (err) {
       // If formatting is invalid, deliver as plain text rather than losing the alert.
       if (err instanceof TelegramError && err.kind === "parse_error" && d.parseMode !== "PLAIN") {
-        msg = await sendMessage(token, d.chatId, d.message, "PLAIN");
-        note = "Sent as plain text because Telegram could not parse the message formatting.";
+        msg = await send("PLAIN");
+        notes.push("Sent as plain text because Telegram could not parse the message formatting.");
       } else throw err;
     }
+    const note = notes.length ? notes.join(" ") : null;
     await db.telegramDelivery.update({
       where: { id },
       data: {
@@ -89,7 +113,7 @@ export async function processDelivery(id: string): Promise<ProcessOutcome> {
       .update({ where: { id: d.bot.id }, data: { status: "CONNECTED", lastError: null, lastCheckedAt: new Date() } })
       .catch(() => undefined);
     if (d.alertId && !d.isTest) await db.alert.update({ where: { id: d.alertId }, data: { lastError: null } }).catch(() => undefined);
-    logger.info("Telegram message sent", { deliveryId: id, chatId: d.chatId, messageId: msg.message_id });
+    logger.info("Telegram message sent", { deliveryId: id, chatId, messageId: msg.message_id });
     return { status: "sent", telegramMessageId: String(msg.message_id) };
   } catch (err) {
     const tg = err instanceof TelegramError ? err : new TelegramError("network", String(err));

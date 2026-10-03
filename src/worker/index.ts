@@ -11,7 +11,7 @@
  *
  * Start with: npm run worker
  */
-import "dotenv/config";
+import dotenv from "dotenv";
 import os from "node:os";
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
@@ -23,6 +23,11 @@ import { processDelivery, sweepDueDeliveries } from "@/lib/notifications/deliver
 import { pollOnce } from "@/lib/services/prices";
 import { closeQueues, enqueueDeliveries, ENGINE_QUEUE, TELEGRAM_QUEUE } from "@/lib/queue";
 import { closeRedis } from "@/lib/queue/redis";
+
+// Match Next.js env precedence so the worker sees the same configuration as the web app
+// (.env.local overrides .env; real process env always wins). `dotenv/config` alone would only
+// read .env and silently diverge — e.g. it would send to the real Telegram API in development.
+for (const file of [".env.local", ".env"]) dotenv.config({ path: file, override: false, quiet: true });
 
 const POLL_MS = Math.max(500, Number(process.env.PRICE_POLL_INTERVAL_MS ?? 5000));
 const workerId = `${os.hostname()}:${process.pid}`;

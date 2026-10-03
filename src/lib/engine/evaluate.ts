@@ -41,6 +41,11 @@ export interface Evaluation {
 
 const EPS = 1e-9;
 
+/** True while the alert is inside the cooldown window that follows a trigger. */
+export function inCooldownWindow(s: Pick<AlertState, "cooldownSeconds" | "lastTriggeredAt">, now: Date): boolean {
+  return s.cooldownSeconds > 0 && !!s.lastTriggeredAt && now.getTime() - s.lastTriggeredAt.getTime() < s.cooldownSeconds * 1000;
+}
+
 export function conditionMet(type: ConditionTypeT, price: number, prev: number | null, target: number, tolerance = 0): boolean {
   switch (type) {
     case "PRICE_ABOVE":
@@ -75,15 +80,23 @@ export function isExpiredByDate(s: Pick<AlertState, "expiryType" | "expiresAt">,
 }
 
 export function evaluate(state: AlertState, price: number, now: Date = new Date()): Evaluation {
+  // COOLDOWN is a live state: it keeps evaluating so it returns to ACTIVE when the window passes.
+  // DRAFT is not live: an unactivated alert never triggers (activation validation gates it to ACTIVE).
+  // An ACTIVE alert inside a window (legacy rows, or a cooldown added after a trigger) reports as COOLDOWN.
+  const inWindow = inCooldownWindow(state, now);
+  const effective: AlertStatusT =
+    state.status === "COOLDOWN" ? (inWindow ? "COOLDOWN" : "ACTIVE") : state.status === "ACTIVE" && inWindow ? "COOLDOWN" : state.status;
+
   const base = {
     armed: state.armed,
     lastPrice: price,
     triggerCount: state.triggerCount,
     lastTriggeredAt: state.lastTriggeredAt,
-    status: state.status,
+    status: effective,
   };
 
-  if (state.status !== "ACTIVE") return { trigger: false, reason: "not_active", next: { ...base, lastPrice: state.lastPrice } };
+  if (effective !== "ACTIVE" && effective !== "COOLDOWN")
+    return { trigger: false, reason: "not_active", next: { ...base, lastPrice: state.lastPrice } };
 
   if (isExpiredByDate(state, now)) return { trigger: false, reason: "expired", next: { ...base, status: "EXPIRED" } };
 
@@ -108,7 +121,7 @@ export function evaluate(state: AlertState, price: number, now: Date = new Date(
     // REARM: a crossing inside the cooldown is consumed, not deferred — otherwise the alert would fire
     // late (when the cooldown ends) about a move that happened earlier. It re-arms on the next return.
     if (state.triggerMode === "REARM") base.armed = false;
-    return { trigger: false, reason: "cooldown", next: base };
+    return { trigger: false, reason: "cooldown", next: { ...base, status: "COOLDOWN" } };
   }
 
   // ── Trigger ──
@@ -117,6 +130,8 @@ export function evaluate(state: AlertState, price: number, now: Date = new Date(
   if (state.triggerMode === "ONCE") status = "TRIGGERED";
   if (state.expiryType === "AFTER_FIRST_TRIGGER") status = "EXPIRED";
   if (state.expiryType === "AFTER_N_TRIGGERS" && state.maxTriggers && triggerCount >= state.maxTriggers) status = "EXPIRED";
+  // Terminal states (TRIGGERED/EXPIRED) win over the post-trigger cooldown state.
+  if (status === "ACTIVE" && state.cooldownSeconds > 0) status = "COOLDOWN";
 
   return {
     trigger: true,

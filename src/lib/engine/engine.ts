@@ -57,7 +57,7 @@ export async function processPriceTick(input: TickInput): Promise<TickResult> {
 
   const alerts = await db.alert.findMany({
     where: {
-      status: "ACTIVE",
+      status: { in: ["ACTIVE", "COOLDOWN"] }, // COOLDOWN alerts stay loaded so they can return to ACTIVE
       dataProvider: input.provider,
       symbol: input.symbol,
       ...(input.scope !== GLOBAL_SCOPE ? { userId: input.scope } : {}),
@@ -153,12 +153,26 @@ export async function processPriceTick(input: TickInput): Promise<TickResult> {
   return result;
 }
 
-/** Marks ACTIVE alerts whose expiry date has passed as EXPIRED (runs on every poll cycle). */
+/** Marks ACTIVE/COOLDOWN alerts whose expiry date has passed as EXPIRED (runs on every poll cycle). */
 export async function expireDueAlerts(now = new Date()) {
   const res = await db.alert.updateMany({
-    where: { status: { in: ["ACTIVE", "PAUSED"] }, expiryType: "AT_DATE", expiresAt: { lte: now } },
+    where: { status: { in: ["ACTIVE", "PAUSED", "COOLDOWN"] }, expiryType: "AT_DATE", expiresAt: { lte: now } },
     data: { status: "EXPIRED", version: { increment: 1 } },
   });
   if (res.count) logger.info("Expired alerts", { count: res.count });
   return res.count;
+}
+
+/**
+ * Returns COOLDOWN alerts whose window has ended to ACTIVE. Ticks do this too, but a quiet feed
+ * (e.g. a webhook symbol) may not tick for a long time, so the poll cycle sweeps as well.
+ * Version-bumped like every state transition so concurrent evaluations stay consistent.
+ */
+export async function releaseFinishedCooldowns(now = new Date()) {
+  const count = await db.$executeRaw`
+    UPDATE "Alert" SET "status" = 'ACTIVE', "version" = "version" + 1, "updatedAt" = ${now}
+    WHERE "status" = 'COOLDOWN'
+      AND ("lastTriggeredAt" IS NULL OR "lastTriggeredAt" + make_interval(secs => "cooldownSeconds") <= ${now})`;
+  if (count) logger.debug("Released finished cooldowns", { count });
+  return count;
 }

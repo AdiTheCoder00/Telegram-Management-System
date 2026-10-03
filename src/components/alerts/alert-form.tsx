@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/misc";
 import { LevelLadder } from "@/components/alerts/level-ladder";
 import { TelegramBubble } from "@/components/telegram-preview";
 import { api, ApiError, errorMessage } from "@/lib/client-api";
@@ -40,6 +39,7 @@ export interface FormBot {
   id: string;
   name: string;
   status: "CONNECTED" | "DISCONNECTED" | "ERROR";
+  enabled: boolean;
   chatTitle: string | null;
   chatId: string;
 }
@@ -72,7 +72,7 @@ export interface AlertFormValues {
   expiryType: ExpiryTypeT;
   expiresAt: string; // datetime-local value
   maxTriggers: string;
-  active: boolean;
+  startAs: "ACTIVE" | "PAUSED" | "DRAFT";
 }
 
 const CONDITION_ICON: Record<ConditionTypeT, typeof ArrowUpRight> = {
@@ -329,7 +329,7 @@ export function AlertForm({
       expiryType: v.expiryType,
       expiresAt: v.expiryType === "AT_DATE" && v.expiresAt ? new Date(v.expiresAt).toISOString() : null,
       maxTriggers: v.expiryType === "AFTER_N_TRIGGERS" ? v.maxTriggers || null : null,
-      status: v.active ? "ACTIVE" : "PAUSED",
+      status: v.startAs,
     };
   }
 
@@ -689,17 +689,31 @@ export function AlertForm({
                       <span
                         className={cn(
                           "size-2 rounded-full",
-                          b.status === "CONNECTED" ? "bg-up" : b.status === "ERROR" ? "bg-down" : "bg-muted-foreground",
+                          !b.enabled
+                            ? "border border-muted-foreground"
+                            : b.status === "CONNECTED"
+                              ? "bg-up"
+                              : b.status === "ERROR"
+                                ? "bg-down"
+                                : "bg-muted-foreground",
                         )}
                       />
                       {b.name}
-                      <span className="text-muted-foreground">· {b.chatTitle ?? b.chatId}</span>
+                      <span className="text-muted-foreground">
+                        · {b.chatTitle ?? b.chatId}
+                        {!b.enabled && " (disabled)"}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <FieldError msg={errors.telegramBotId} />
-              {bot?.status === "ERROR" && (
+              {bot && !bot.enabled && (
+                <p className="mt-1.5 text-xs text-[#8a5a00] dark:text-signal">
+                  This bot is disabled. Enable it on the Telegram Bots page, or save the alert paused.
+                </p>
+              )}
+              {bot?.enabled && bot.status === "ERROR" && (
                 <p className="mt-1.5 text-xs text-destructive">This bot has a connection problem. Check it on the Telegram Bots page.</p>
               )}
             </div>
@@ -819,13 +833,26 @@ export function AlertForm({
             </ReviewRow>
             <ReviewRow label="Format">{PARSE_MODE_LABELS[v.parseMode]}</ReviewRow>
           </dl>
-          <label className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3">
-            <span>
-              <span className="block text-sm font-medium">Start active</span>
-              <span className="block text-xs text-muted-foreground">Turn off to save the alert paused.</span>
+          <div className="rounded-lg border px-4 py-3">
+            <span className="block text-sm font-medium">Start as</span>
+            <span className="block text-xs text-muted-foreground">
+              {v.startAs === "DRAFT"
+                ? "Draft: saved for later — it never evaluates until you activate it."
+                : v.startAs === "PAUSED"
+                  ? "Paused: saved and switchable on at any time."
+                  : "Active: starts watching the market immediately."}
             </span>
-            <Switch checked={v.active} onCheckedChange={(c) => set("active", c)} aria-label="Start active" />
-          </label>
+            <Select value={v.startAs} onValueChange={(c) => set("startAs", c as AlertFormValues["startAs"])}>
+              <SelectTrigger className="mt-2 w-44" aria-label="Start as">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ACTIVE">Active</SelectItem>
+                <SelectItem value="PAUSED">Paused</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </Section>
 
         <div className="sticky bottom-0 z-20 -mx-4 flex justify-end gap-2 border-t bg-background/90 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-5">

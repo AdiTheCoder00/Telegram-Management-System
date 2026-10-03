@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { AppError, notFound } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { fakeVerify, hashPassword, verifyPassword } from "@/lib/auth/password";
+import { LOCAL_SESSION_ID } from "@/lib/auth/constants";
 
 /**
  * Personal installation: registration is open only until the owner account exists (first-run setup).
@@ -45,9 +46,16 @@ export async function authenticate(email: string, password: string) {
 }
 
 /** Changes the password and signs out every other session (the current one stays signed in). */
-export async function changePassword(userId: string, currentSessionId: string, current: string, next: string) {
+export async function changePassword(userId: string, currentSessionId: string, current: string | undefined, next: string) {
   const user = await db.user.findUniqueOrThrow({ where: { id: userId } });
-  if (!(await verifyPassword(current, user.passwordHash))) {
+  // Local-mode access (this computer, no sign-in) may set a password without knowing the current one.
+  const localAccess = currentSessionId === LOCAL_SESSION_ID;
+  if (!localAccess && !current) {
+    throw new AppError(400, "Enter your current password.", "invalid_password", {
+      fieldErrors: { currentPassword: "Enter your current password." },
+    });
+  }
+  if (!localAccess && !(await verifyPassword(current!, user.passwordHash))) {
     throw new AppError(400, "Current password is incorrect.", "invalid_password", {
       fieldErrors: { currentPassword: "Incorrect password." },
     });

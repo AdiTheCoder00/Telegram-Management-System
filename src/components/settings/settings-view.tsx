@@ -46,15 +46,18 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 export function SettingsView({
   user,
+  localMode,
   keys,
   appUrl,
 }: {
   user: { name: string | null; email: string; timezone: string };
+  localMode: boolean;
   keys: Key[];
   appUrl: string;
 }) {
   const router = useRouter();
   const [name, setName] = useState(user.name ?? "");
+  const [email, setEmail] = useState(user.email);
   const [timezone, setTimezone] = useState(user.timezone);
   const [saving, setSaving] = useState(false);
   const [keyName, setKeyName] = useState("");
@@ -84,7 +87,7 @@ export function SettingsView({
     e.preventDefault();
     setSaving(true);
     try {
-      await api("/api/settings", { method: "PUT", body: { name, timezone } });
+      await api("/api/settings", { method: "PUT", body: { name, email, timezone } });
       toast.success("Settings saved");
       router.refresh();
     } catch (err) {
@@ -136,7 +139,7 @@ export function SettingsView({
           </div>
           <div>
             <Label htmlFor="s-email">Email</Label>
-            <Input id="s-email" className="mt-1.5" value={user.email} disabled />
+            <Input id="s-email" type="email" className="mt-1.5" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div>
             <Label htmlFor="s-tz">Timezone</Label>
@@ -229,7 +232,7 @@ export function SettingsView({
         </div>
       </Card>
 
-      <SecurityCard />
+      <SecurityCard localMode={localMode} />
 
       <ConfirmDialog
         open={!!revoking}

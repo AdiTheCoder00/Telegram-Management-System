@@ -11,3 +11,6 @@ next-env.d.ts
 src/generated
 .pgdata
 *.log
+
+# Other AI-agent tool state
+.freebuff

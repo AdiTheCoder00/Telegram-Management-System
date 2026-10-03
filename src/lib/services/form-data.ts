@@ -9,7 +9,7 @@ export async function loadAlertFormData(userId: string) {
   const [bots, instruments] = await Promise.all([
     db.telegramBot.findMany({
       where: { userId },
-      select: { id: true, name: true, status: true, chatTitle: true, chatId: true },
+      select: { id: true, name: true, status: true, chatTitle: true, chatId: true, enabled: true },
       orderBy: { createdAt: "asc" },
     }),
     db.instrument.findMany({ select: { symbol: true, displayName: true, provider: true, exchange: true }, orderBy: { symbol: "asc" } }),
@@ -34,7 +34,13 @@ export function valuesFromAlert(a: AlertDTO, opts: { duplicate?: boolean } = {})
     // ISO string; the form converts it to a datetime-local value in the browser's timezone
     expiresAt: a.expiresAt ? new Date(a.expiresAt).toISOString() : "",
     maxTriggers: a.maxTriggers ? String(a.maxTriggers) : "",
-    active: opts.duplicate ? true : a.status === "ACTIVE",
+    startAs: opts.duplicate
+      ? "ACTIVE"
+      : a.status === "DRAFT"
+        ? "DRAFT"
+        : a.status === "ACTIVE" || a.status === "COOLDOWN"
+          ? "ACTIVE"
+          : "PAUSED",
   };
 }
 
@@ -78,6 +84,6 @@ export function blankValues(defaultBotId: string | null, template?: string | nul
     expiryType: "NEVER",
     expiresAt: "",
     maxTriggers: "",
-    active: true,
+    startAs: "ACTIVE",
   };
 }

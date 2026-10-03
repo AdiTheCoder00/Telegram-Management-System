@@ -8,6 +8,8 @@ import type { AddressInfo } from "node:net";
  */
 export const VALID_TOKEN = "123456789:AAH-valid-token-for-tests-0123456789ab";
 export const VALID_CHATS = new Set(["-1001234567890", "42"]);
+/** An old group ID that Telegram reports as upgraded to the supergroup -1001234567890. */
+export const MIGRATED_CHAT = "-4000000001";
 
 export interface SentMessage {
   chat_id: string;
@@ -54,6 +56,13 @@ export async function startMockTelegram(port = 0): Promise<MockTelegram> {
       if (method === "getMe")
         return reply(200, { ok: true, result: { id: 123456789, is_bot: true, first_name: "Test Bot", username: "test_alerts_bot" } });
       const chatId = String(payload.chat_id ?? "");
+      if (chatId === MIGRATED_CHAT)
+        return reply(400, {
+          ok: false,
+          error_code: 400,
+          description: "Bad Request: group chat was upgraded to a supergroup chat",
+          parameters: { migrate_to_chat_id: -1001234567890 },
+        });
       if (!VALID_CHATS.has(chatId)) return reply(400, { ok: false, error_code: 400, description: "Bad Request: chat not found" });
       if (method === "getChat")
         return reply(200, { ok: true, result: { id: Number(chatId), type: "supergroup", title: "Trading Alerts" } });

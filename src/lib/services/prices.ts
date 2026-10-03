@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import { getProvider } from "@/lib/market-data/registry";
 import { MarketDataError, type SymbolRef } from "@/lib/market-data/types";
 import { GLOBAL_SCOPE, latestQuote } from "@/lib/engine/quotes";
-import { expireDueAlerts, processPriceTick } from "@/lib/engine/engine";
+import { expireDueAlerts, processPriceTick, releaseFinishedCooldowns } from "@/lib/engine/engine";
 import { enqueueDeliveries } from "@/lib/queue";
 
 async function symbolRefs(symbols: string[]): Promise<SymbolRef[]> {
@@ -63,7 +63,8 @@ export async function ingestTicks(provider: string, scope: string, ticks: { symb
  */
 export async function pollOnce() {
   await expireDueAlerts();
-  const pairs = await db.alert.groupBy({ by: ["dataProvider", "symbol"], where: { status: "ACTIVE" } });
+  await releaseFinishedCooldowns();
+  const pairs = await db.alert.groupBy({ by: ["dataProvider", "symbol"], where: { status: { in: ["ACTIVE", "COOLDOWN"] } } });
   const byProvider = new Map<string, string[]>();
   for (const p of pairs) {
     const list = byProvider.get(p.dataProvider) ?? [];

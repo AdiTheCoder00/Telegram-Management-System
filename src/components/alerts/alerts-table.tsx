@@ -124,6 +124,8 @@ export function AlertsTable({
             <SelectContent>
               <SelectItem value={ALL}>All statuses</SelectItem>
               <SelectItem value="ACTIVE">Active</SelectItem>
+              <SelectItem value="COOLDOWN">Cooldown</SelectItem>
+              <SelectItem value="DRAFT">Draft</SelectItem>
               <SelectItem value="PAUSED">Paused</SelectItem>
               <SelectItem value="TRIGGERED">Triggered</SelectItem>
               <SelectItem value="EXPIRED">Expired</SelectItem>
@@ -199,7 +201,8 @@ export function AlertsTable({
           </TableHeader>
           <TableBody>
             {alerts.map((a) => {
-              const canToggle = a.status === "ACTIVE" || a.status === "PAUSED";
+              const canToggle = a.status === "ACTIVE" || a.status === "COOLDOWN" || a.status === "PAUSED" || a.status === "DRAFT";
+              const isLive = a.status === "ACTIVE" || a.status === "COOLDOWN";
               const toggling = busy === `${a.id}:pause` || busy === `${a.id}:resume`;
               return (
                 <TableRow key={a.id}>
@@ -226,10 +229,10 @@ export function AlertsTable({
                     {canToggle ? (
                       <button
                         type="button"
-                        onClick={() => act(a, a.status === "ACTIVE" ? "pause" : "resume")}
+                        onClick={() => act(a, isLive ? "pause" : "resume")}
                         disabled={toggling}
-                        aria-label={a.status === "ACTIVE" ? `Pause ${a.name}` : `Resume ${a.name}`}
-                        title={a.status === "ACTIVE" ? "Click to pause" : "Click to resume"}
+                        aria-label={isLive ? `Pause ${a.name}` : `Resume ${a.name}`}
+                        title={isLive ? "Click to pause" : "Click to resume"}
                         className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                       >
                         <AlertStatusBadge status={a.status} />
