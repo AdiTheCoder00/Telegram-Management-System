@@ -108,7 +108,7 @@ export async function processPriceTick(input: TickInput): Promise<TickResult> {
               previousPrice: alert.lastPrice,
               targetPrice: alert.targetPrice,
               triggeredAt: now,
-              status: alert.bot ? "PENDING" : "FAILED",
+              status: alert.bot ? "QUEUED" : "FAILED",
             },
           });
 

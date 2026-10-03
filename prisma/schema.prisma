@@ -59,10 +59,39 @@ enum BotStatus {
   ERROR
 }
 
+/// Notification lifecycle (M20): QUEUED → SENDING → SENT
+///                                       ↘ RETRYING (transient error, backoff) → SENDING …
+///                                       ↘ FAILED (permanent error) | DEAD_LETTER (retries exhausted)
 enum DeliveryStatus {
-  PENDING
+  QUEUED
+  SENDING
   SENT
+  RETRYING
   FAILED
+  DEAD_LETTER
+}
+
+enum AlertKind {
+  PRICE // single price level (tick-based)
+  CONDITIONS // condition tree over candles/indicators (M8–M12)
+}
+
+enum EvaluationMode {
+  EVERY_TICK
+  CANDLE_CLOSE
+}
+
+enum BacktestStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum WebhookKind {
+  TRADINGVIEW
+  GENERIC
 }
 
 enum NotificationChannel {
@@ -87,6 +116,9 @@ model User {
   events     AlertEvent[]
   deliveries TelegramDelivery[]
   apiKeys    ApiKey[]
+  groups     AlertGroup[]
+  backtests  Backtest[]
+  webhooks   Webhook[]
 }
 
 model Session {
@@ -213,24 +245,104 @@ model Alert {
   triggerCount    Int                 @default(0)
   lastTriggeredAt DateTime?           @db.Timestamptz(3)
 
+  // Condition-tree alerts (kind = CONDITIONS)
+  kind           AlertKind      @default(PRICE)
+  timeframe      String         @default("5m") // base timeframe for CONDITIONS alerts
+  evaluationMode EvaluationMode @default(EVERY_TICK)
+  conditionTree  Json? // validated ConditionNode (src/lib/conditions/types.ts)
+  /// Increments on every configuration change; triggers/backtests reference the exact version (AlertVersion).
+  configVersion  Int            @default(1)
+  groupId        String?
+  /// Set when "Pause all" paused this alert, so "Resume all" restores exactly those (M22).
+  pausedByBulk   Boolean        @default(false)
+
   // Engine state
-  armed           Boolean   @default(true) // false after a trigger until the condition resets (REARM)
-  lastPrice       Float? // last observed price, needed for cross detection
-  lastEvaluatedAt DateTime? @db.Timestamptz(3)
-  lastError       String?
-  version         Int       @default(0) // optimistic lock: prevents double triggers from concurrent ticks
+  armed               Boolean   @default(true) // false after a trigger until the condition resets (REARM)
+  lastPrice           Float? // last observed price, needed for cross detection
+  lastEvaluatedAt     DateTime? @db.Timestamptz(3)
+  /// CANDLE_CLOSE: openTime of the last candle evaluated (each closed candle is evaluated exactly once).
+  lastEvaluatedCandle DateTime? @db.Timestamptz(3)
+  /// FRESH | STALE | INSUFFICIENT_HISTORY | UNSUPPORTED | ERROR — why the engine is or isn't evaluating.
+  marketDataState     String?
+  lastEvaluationNote  String?
+  lastError           String?
+  version             Int       @default(0) // optimistic lock: prevents double triggers from concurrent ticks
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   bot        TelegramBot?       @relation(fields: [telegramBotId], references: [id], onDelete: SetNull)
+  group      AlertGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
   events     AlertEvent[]
   deliveries TelegramDelivery[]
+  versions   AlertVersion[]
+  evidence   TriggerEvidence[]
+  backtests  Backtest[]
 
   @@index([userId, status])
   @@index([status, dataProvider, symbol])
+  @@index([status, kind])
   @@index([telegramBotId])
+  @@index([groupId])
+}
+
+/// Immutable snapshot of an alert's configuration at each version. Triggers and backtests point here.
+model AlertVersion {
+  id        String   @id @default(cuid())
+  alertId   String?
+  userId    String
+  version   Int
+  config    Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  alert Alert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+
+  @@unique([alertId, version])
+  @@index([userId])
+}
+
+model AlertGroup {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts Alert[]
+
+  @@unique([userId, name])
+}
+
+/// Immutable "why did this alert trigger?" record (M17). The unique idempotency key is the final guard
+/// against duplicate triggers (duplicate events, retries, concurrent workers).
+model TriggerEvidence {
+  id                      String         @id @default(cuid())
+  alertEventId            String         @unique
+  alertId                 String?
+  userId                  String
+  alertVersion            Int
+  idempotencyKey          String         @unique
+  symbol                  String
+  provider                String
+  timeframe               String?
+  evaluationMode          EvaluationMode
+  candleOpenTime          DateTime?      @db.Timestamptz(3)
+  candleState             String?
+  price                   Float
+  marketDataTime          DateTime?      @db.Timestamptz(3)
+  providerMeta            Json?
+  evaluation              Json // condition results tree with values
+  reason                  String
+  evaluationEngineVersion String
+  indicatorEngineVersion  String
+  createdAt               DateTime       @default(now()) @db.Timestamptz(3)
+
+  event AlertEvent @relation(fields: [alertEventId], references: [id], onDelete: Cascade)
+  alert Alert?     @relation(fields: [alertId], references: [id], onDelete: SetNull)
+
+  @@index([alertId, createdAt])
+  @@index([userId, createdAt])
 }
 
 /// One row per trigger (or test). Snapshots alert fields so history survives alert deletion.
@@ -245,19 +357,21 @@ model AlertEvent {
   previousPrice Float?
   targetPrice   Float
   isTest        Boolean        @default(false)
-  status        DeliveryStatus @default(PENDING) // mirrors the delivery outcome
+  status        DeliveryStatus @default(QUEUED) // mirrors the delivery outcome
+  alertVersion  Int?
   triggeredAt   DateTime       @default(now()) @db.Timestamptz(3)
 
   alert      Alert?             @relation(fields: [alertId], references: [id], onDelete: SetNull)
   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   deliveries TelegramDelivery[]
+  evidence   TriggerEvidence?
 
   @@index([userId, triggeredAt])
   @@index([alertId, triggeredAt])
   @@index([symbol])
 }
 
-/// Every outgoing Telegram message. Doubles as a transactional outbox: rows in PENDING
+/// Every outgoing Telegram message. Doubles as a transactional outbox: QUEUED/RETRYING rows
 /// are picked up by the worker (via the queue, or by the recovery sweep after a restart).
 model TelegramDelivery {
   id                String         @id @default(cuid())
@@ -269,7 +383,7 @@ model TelegramDelivery {
   message           String
   parseMode         ParseMode      @default(PLAIN)
   isTest            Boolean        @default(false)
-  status            DeliveryStatus @default(PENDING)
+  status            DeliveryStatus @default(QUEUED)
   telegramMessageId String?
   error             String? // user-facing message
   errorDetail       String? // technical detail (Telegram description), shown in logs only
@@ -301,4 +415,98 @@ model WorkerHeartbeat {
   info       Json?
 
   @@index([lastSeenAt])
+}
+
+// ─────────────────────── Market data (M7) ───────────────────────
+
+/// Canonical candle cache. scope = "global" for provider feeds, or a userId for user-scoped tick feeds.
+/// Candles are stored exactly as validated by normalizeCandles(); FORMING candles are overwritten until closed.
+model Candle {
+  provider   String
+  scope      String
+  symbol     String
+  timeframe  String
+  openTime   DateTime @db.Timestamptz(3)
+  open       Float
+  high       Float
+  low        Float
+  close      Float
+  volume     Float?
+  volumeType String // REAL | TICK | PROVIDER | UNAVAILABLE
+  closed     Boolean
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  @@id([provider, scope, symbol, timeframe, openTime])
+  @@index([provider, symbol, timeframe, openTime])
+}
+
+/// Last known health of each market-data provider (drives stale-data handling and the health page).
+model ProviderHealth {
+  provider            String    @id
+  lastSuccessAt       DateTime? @db.Timestamptz(3)
+  lastErrorAt         DateTime? @db.Timestamptz(3)
+  lastError           String?
+  consecutiveFailures Int       @default(0)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+}
+
+// ───────────────────────── Backtests (M15) ─────────────────────────
+
+model Backtest {
+  id              String         @id @default(cuid())
+  userId          String
+  alertId         String?
+  alertVersion    Int?
+  status          BacktestStatus @default(QUEUED)
+  /// Everything needed to reproduce the run: alert config snapshot, symbol, timeframe, range, mode, provider.
+  config          Json
+  /// Dataset identity: provider, candle counts per timeframe, first/last candle, SHA-256 of the candles.
+  dataset         Json?
+  result          Json?
+  error           String?
+  progress        Float          @default(0)
+  cancelRequested Boolean        @default(false)
+  engineVersions  Json
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  startedAt       DateTime?      @db.Timestamptz(3)
+  finishedAt      DateTime?      @db.Timestamptz(3)
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alert Alert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+// ──────────────────── Webhooks & audit (M13, M22) ────────────────────
+
+/// Per-source inbound webhook. TradingView: POST /api/webhooks/tradingview/<secret> (secret in the URL because
+/// TradingView cannot set headers). Generic: POST /api/webhooks/<id> with the secret in a header.
+model Webhook {
+  id           String      @id @default(cuid())
+  userId       String
+  name         String
+  kind         WebhookKind
+  secretHash   String      @unique
+  secretPrefix String
+  enabled      Boolean     @default(true)
+  lastUsedAt   DateTime?   @db.Timestamptz(3)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String // e.g. alerts.pause_all, market.reconnect, notifications.retry_failed
+  target    String?
+  detail    Json?
+  ip        String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
 }

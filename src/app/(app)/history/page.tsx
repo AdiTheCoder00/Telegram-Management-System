@@ -1,3 +1,4 @@
+import { DELIVERY_STATUSES } from "@/lib/constants";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDeliveryLogs, getHistory } from "@/lib/services/history";
@@ -19,9 +20,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   // "to" from a date input means the end of that day
   if (q.to && sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to)) q.to = new Date(q.to.getTime() + 86_399_999);
 
-  const dq = z
-    .object({ status: z.enum(["PENDING", "SENT", "FAILED"]).optional(), page: z.coerce.number().int().min(1).default(1) })
-    .safeParse(sp);
+  const dq = z.object({ status: z.enum(DELIVERY_STATUSES).optional(), page: z.coerce.number().int().min(1).default(1) }).safeParse(sp);
 
   const [history, deliveries, symbols] = await Promise.all([
     tab === "triggers" ? getHistory(user.id, q) : null,

@@ -7,7 +7,7 @@
  *  - REDIS_URL set: BullMQ job scheduler drives price polling (one poller across any number of worker
  *    replicas) and a BullMQ worker sends Telegram messages with rate limiting and retries.
  *  - No Redis: an in-process poll loop + database outbox sweep (good for development / single node).
- * In both modes a periodic outbox sweep recovers anything left PENDING (crash, restart, Redis outage).
+ * In both modes a periodic outbox sweep recovers anything left QUEUED/RETRYING or stuck SENDING (crash, restart, Redis outage).
  *
  * Start with: npm run worker
  */
@@ -106,7 +106,7 @@ async function startWithRedis(url: string) {
     () => engineQueue.close(),
   );
 
-  // Outbox recovery: anything PENDING for >10s that the queue didn't handle.
+  // Outbox recovery: anything due for >10s that the queue didn't handle.
   every(15_000, "outbox sweep", () => sweepDueDeliveries(100, 10_000));
   logger.info("Worker started (BullMQ mode)", { workerId, pollMs: POLL_MS });
 }

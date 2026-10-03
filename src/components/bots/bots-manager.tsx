@@ -3,7 +3,20 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Bot, CheckCircle2, KeyRound, Loader2, MessageSquare, MoreHorizontal, Pencil, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
+import {
+  Bot,
+  CheckCircle2,
+  KeyRound,
+  Loader2,
+  MessageSquare,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -403,8 +416,11 @@ function BotDialog({ bot, onClose, onSaved }: { bot: BotDTO | "new" | null; onCl
             {errors.chatId ? (
               <p className="mt-1 text-xs text-destructive">{errors.chatId}</p>
             ) : (
-              <p className="mt-1 text-xs text-muted-foreground">A user, group or channel ID, or @channelusername.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The chat that receives alerts — your own chat, a group or a channel (not the bot&apos;s username).
+              </p>
             )}
+            <FindChat token={token.trim()} botId={existing?.id} onPick={(id) => setChatId(id)} />
           </div>
           {testResult && (
             <p
@@ -430,5 +446,95 @@ function BotDialog({ bot, onClose, onSaved }: { bot: BotDTO | "new" | null; onCl
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface FoundChat {
+  id: string;
+  type: "private" | "group" | "supergroup" | "channel";
+  title: string;
+  lastSeen: number;
+}
+
+const CHAT_TYPE_LABEL: Record<FoundChat["type"], string> = {
+  private: "Private chat",
+  group: "Group",
+  supergroup: "Group",
+  channel: "Channel",
+};
+
+/**
+ * Lists chats the bot has recently seen (via getUpdates, read-only) so the Chat ID can be picked instead of
+ * copied from raw API output. Works for the add form (token) and for saved bots (botId).
+ */
+function FindChat({ token, botId, onPick }: { token: string; botId?: string; onPick: (id: string) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ botUsername: string; chats: FoundChat[]; error: string | null } | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const canSearch = !!token || !!botId;
+
+  async function search() {
+    setLoading(true);
+    setFailure(null);
+    try {
+      const body = token ? { token } : { botId };
+      setResult(
+        await api<{ botUsername: string; chats: FoundChat[]; error: string | null }>("/api/telegram/discover-chats", {
+          method: "POST",
+          body,
+        }),
+      );
+    } catch (err) {
+      setResult(null);
+      setFailure(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-dashed p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">Don&apos;t know the Chat ID? Message your bot first, then:</p>
+        <Button type="button" variant="outline" size="sm" onClick={search} disabled={!canSearch || loading}>
+          {loading ? <Loader2 className="animate-spin" /> : <Search />} Find my chat
+        </Button>
+      </div>
+      {!canSearch && <p className="mt-2 text-xs text-muted-foreground">Enter the bot token first.</p>}
+      {failure && <p className="mt-2 text-xs text-destructive">{failure}</p>}
+      {result?.error && <p className="mt-2 text-xs text-destructive">{result.error}</p>}
+      {result && !result.error && result.chats.length === 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          No chats yet. In Telegram, open{" "}
+          <a
+            className="font-medium text-foreground underline"
+            href={`https://t.me/${result.botUsername}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            @{result.botUsername}
+          </a>
+          , press <strong>Start</strong> (or add it to your group and send a message there), then click Find my chat again.
+        </p>
+      )}
+      {result && result.chats.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {result.chats.map((c) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                onClick={() => onPick(c.id)}
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                <span className="truncate">
+                  {c.title} <span className="text-xs text-muted-foreground">· {CHAT_TYPE_LABEL[c.type]}</span>
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground tabular">{c.id}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

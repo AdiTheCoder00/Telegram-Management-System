@@ -79,7 +79,42 @@ export function isExpiredByDate(s: Pick<AlertState, "expiryType" | "expiresAt">,
   return s.expiryType === "AT_DATE" && !!s.expiresAt && s.expiresAt.getTime() <= now.getTime();
 }
 
+/** Trigger-relevant state, independent of how the condition is expressed (price level or condition tree). */
+export type TriggerState = Omit<AlertState, "conditionType" | "targetPrice" | "tolerance">;
+
+/**
+ * Output of a condition check, in the shape the state machine needs:
+ *  ready — the condition could be evaluated (false: no previous price for a crossing, indicator warm-up…)
+ *  met   — the condition holds now
+ *  reset — price/condition is definitively back on the "untriggered" side (re-arms REARM alerts)
+ */
+export interface Signal {
+  ready: boolean;
+  met: boolean;
+  reset: boolean;
+}
+
+/** Price-level alerts → Signal. */
+export function priceSignal(state: AlertState, price: number): Signal {
+  const isCross = state.conditionType === "CROSSES_ABOVE" || state.conditionType === "CROSSES_BELOW";
+  return {
+    ready: !(isCross && state.lastPrice === null),
+    met: conditionMet(state.conditionType, price, state.lastPrice, state.targetPrice, state.tolerance),
+    reset: resetConditionMet(state.conditionType, price, state.targetPrice, state.tolerance),
+  };
+}
+
+/** Price-level alert evaluation (kept as the stable entry point for tick-based price alerts). */
 export function evaluate(state: AlertState, price: number, now: Date = new Date()): Evaluation {
+  return decide(state, priceSignal(state, price), now, price);
+}
+
+/**
+ * The single trigger state machine (once / re-arm / every-time, cooldown, expiry, terminal states) shared by
+ * price alerts and condition-tree alerts, live and in backtests. `observed` is stored as lastPrice.
+ */
+export function decide(state: TriggerState, signal: Signal, now: Date, observed: number | null): Evaluation {
+  const price = observed;
   // COOLDOWN is a live state: it keeps evaluating so it returns to ACTIVE when the window passes.
   // DRAFT is not live: an unactivated alert never triggers (activation validation gates it to ACTIVE).
   // An ACTIVE alert inside a window (legacy rows, or a cooldown added after a trigger) reports as COOLDOWN.
@@ -100,16 +135,14 @@ export function evaluate(state: AlertState, price: number, now: Date = new Date(
 
   if (isExpiredByDate(state, now)) return { trigger: false, reason: "expired", next: { ...base, status: "EXPIRED" } };
 
-  // Re-arm when price has returned to the other side of the target.
-  if (!base.armed && state.triggerMode === "REARM" && resetConditionMet(state.conditionType, price, state.targetPrice, state.tolerance)) {
+  // Re-arm when the condition is definitively back on the other side (e.g. price returned below the target).
+  if (!base.armed && state.triggerMode === "REARM" && signal.reset) {
     base.armed = true;
   }
 
-  const isCross = state.conditionType === "CROSSES_ABOVE" || state.conditionType === "CROSSES_BELOW";
-  if (isCross && state.lastPrice === null) return { trigger: false, reason: "no_previous_price", next: base };
+  if (!signal.ready) return { trigger: false, reason: "no_previous_price", next: base };
 
-  if (!conditionMet(state.conditionType, price, state.lastPrice, state.targetPrice, state.tolerance))
-    return { trigger: false, reason: "condition_not_met", next: base };
+  if (!signal.met) return { trigger: false, reason: "condition_not_met", next: base };
 
   if (state.triggerMode !== "EVERY_TIME" && !base.armed) return { trigger: false, reason: "disarmed", next: base };
 

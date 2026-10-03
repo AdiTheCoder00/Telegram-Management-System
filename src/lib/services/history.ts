@@ -1,3 +1,4 @@
+import type { DeliveryStatusT } from "@/lib/constants";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { z } from "zod";
@@ -66,7 +67,7 @@ export async function getHistory(userId: string, q: HistoryQuery) {
 }
 export type HistoryItem = Awaited<ReturnType<typeof getHistory>>["items"][number];
 
-export async function getDeliveryLogs(userId: string, q: { status?: "PENDING" | "SENT" | "FAILED"; page: number; pageSize: number }) {
+export async function getDeliveryLogs(userId: string, q: { status?: DeliveryStatusT; page: number; pageSize: number }) {
   const where: Prisma.TelegramDeliveryWhereInput = { userId, ...(q.status ? { status: q.status } : {}) };
   const [total, rows] = await Promise.all([
     db.telegramDelivery.count({ where }),

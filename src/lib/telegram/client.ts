@@ -10,6 +10,7 @@ export type TelegramErrorKind =
   | "invalid_token"
   | "chat_not_found"
   | "chat_migrated"
+  | "chat_is_bot"
   | "bot_blocked"
   | "parse_error"
   | "bad_request"
@@ -44,6 +45,8 @@ export class TelegramError extends Error {
         return "Telegram could not find that chat. Check the Chat ID and make sure the bot was added to the chat/channel.";
       case "chat_migrated":
         return `This group was upgraded to a supergroup and its Chat ID changed${this.migrateToChatId ? ` to ${this.migrateToChatId}` : ""}.`;
+      case "chat_is_bot":
+        return "That Chat ID is a bot (possibly this bot itself). Use your own chat, a group or a channel — open your bot in Telegram, press Start, then use “Find my chat”.";
       case "bot_blocked":
         return "The bot is not allowed to post in this chat. Unblock the bot or give it permission to send messages.";
       case "parse_error":
@@ -222,5 +225,8 @@ export async function discoverChats(token: string) {
 export async function verifyConnection(token: string, chatId: string) {
   const me = await getMe(token);
   const chat = await getChat(token, chatId);
+  // getChat succeeds for the bot's own @username, but a bot can never message itself. (Other bots are
+  // rejected by Telegram at send time with 403 "bots can't send messages to bots".)
+  if (chat.id === me.id) throw new TelegramError("chat_is_bot", "Chat ID is the bot itself", 400);
   return { botUsername: me.username ?? me.first_name, chatTitle: chatTitle(chat), chatType: chat.type };
 }

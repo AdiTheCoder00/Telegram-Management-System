@@ -137,8 +137,10 @@ export function HistoryView({
               <SelectContent>
                 <SelectItem value={ALL}>Any status</SelectItem>
                 <SelectItem value="SENT">Delivered</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="QUEUED">Queued</SelectItem>
+                <SelectItem value="RETRYING">Retrying</SelectItem>
                 <SelectItem value="FAILED">Failed</SelectItem>
+                <SelectItem value="DEAD_LETTER">Gave up (dead letter)</SelectItem>
               </SelectContent>
             </Select>
           </div>

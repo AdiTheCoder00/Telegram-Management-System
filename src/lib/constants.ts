@@ -62,7 +62,7 @@ export const PARSE_MODE_LABELS: Record<ParseModeT, string> = {
   HTML: "HTML",
 };
 
-export const DELIVERY_STATUSES = ["PENDING", "SENT", "FAILED"] as const;
+export const DELIVERY_STATUSES = ["QUEUED", "SENDING", "SENT", "RETRYING", "FAILED", "DEAD_LETTER"] as const;
 export type DeliveryStatusT = (typeof DELIVERY_STATUSES)[number];
 
 export const COOLDOWN_PRESETS = [

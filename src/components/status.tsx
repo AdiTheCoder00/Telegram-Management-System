@@ -40,9 +40,21 @@ export function DeliveryBadge({ status }: { status: DeliveryStatusT | null | und
         <X /> Failed
       </Badge>
     );
+  if (status === "DEAD_LETTER")
+    return (
+      <Badge variant="down" title="Retries exhausted — use “Retry failed notifications” in Settings">
+        <X /> Gave up
+      </Badge>
+    );
+  if (status === "RETRYING")
+    return (
+      <Badge variant="signal">
+        <Clock /> Retrying
+      </Badge>
+    );
   return (
     <Badge variant="signal">
-      <Clock /> Pending
+      <Clock /> {status === "SENDING" ? "Sending" : "Queued"}
     </Badge>
   );
 }
