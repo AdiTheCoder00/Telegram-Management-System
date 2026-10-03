@@ -40,6 +40,7 @@ export interface FormBot {
   id: string;
   name: string;
   status: "CONNECTED" | "DISCONNECTED" | "ERROR";
+  enabled: boolean;
   chatTitle: string | null;
   chatId: string;
 }
@@ -689,17 +690,31 @@ export function AlertForm({
                       <span
                         className={cn(
                           "size-2 rounded-full",
-                          b.status === "CONNECTED" ? "bg-up" : b.status === "ERROR" ? "bg-down" : "bg-muted-foreground",
+                          !b.enabled
+                            ? "border border-muted-foreground"
+                            : b.status === "CONNECTED"
+                              ? "bg-up"
+                              : b.status === "ERROR"
+                                ? "bg-down"
+                                : "bg-muted-foreground",
                         )}
                       />
                       {b.name}
-                      <span className="text-muted-foreground">· {b.chatTitle ?? b.chatId}</span>
+                      <span className="text-muted-foreground">
+                        · {b.chatTitle ?? b.chatId}
+                        {!b.enabled && " (disabled)"}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <FieldError msg={errors.telegramBotId} />
-              {bot?.status === "ERROR" && (
+              {bot && !bot.enabled && (
+                <p className="mt-1.5 text-xs text-[#8a5a00] dark:text-signal">
+                  This bot is disabled. Enable it on the Telegram Bots page, or save the alert paused.
+                </p>
+              )}
+              {bot?.enabled && bot.status === "ERROR" && (
                 <p className="mt-1.5 text-xs text-destructive">This bot has a connection problem. Check it on the Telegram Bots page.</p>
               )}
             </div>

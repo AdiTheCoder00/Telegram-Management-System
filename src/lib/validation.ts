@@ -34,7 +34,8 @@ export const registerSchema = z.object({
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, "Enter your current password.").max(128),
+  /** Required except in local mode (no sign-in on this computer), where the owner may set a password directly. */
+  currentPassword: z.string().max(128).optional(),
   newPassword: passwordSchema,
 });
 
@@ -66,6 +67,7 @@ export const updateBotSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   token: botTokenSchema.optional(), // only sent when the user replaces the token
   chatId: chatIdSchema.optional(),
+  enabled: z.boolean().optional(),
 });
 
 export const telegramTestSchema = z.union([
@@ -164,6 +166,7 @@ export const priceWebhookSchema = z.union([priceWebhookItem, z.object({ prices: 
 
 export const settingsSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
+  email: emailSchema.optional(),
   timezone: timezoneSchema.optional(),
 });
 

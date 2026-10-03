@@ -128,6 +128,8 @@ model TelegramBot {
   botUsername    String?
   chatId         String
   chatTitle      String?
+  /// Disabled bots send nothing (alerts still trigger and are recorded; their deliveries fail as "bot disabled").
+  enabled        Boolean   @default(true)
   status         BotStatus @default(DISCONNECTED)
   lastError      String?
   lastCheckedAt  DateTime? @db.Timestamptz(3)

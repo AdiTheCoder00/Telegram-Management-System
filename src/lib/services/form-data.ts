@@ -9,7 +9,7 @@ export async function loadAlertFormData(userId: string) {
   const [bots, instruments] = await Promise.all([
     db.telegramBot.findMany({
       where: { userId },
-      select: { id: true, name: true, status: true, chatTitle: true, chatId: true },
+      select: { id: true, name: true, status: true, chatTitle: true, chatId: true, enabled: true },
       orderBy: { createdAt: "asc" },
     }),
     db.instrument.findMany({ select: { symbol: true, displayName: true, provider: true, exchange: true }, orderBy: { symbol: "asc" } }),

@@ -3,7 +3,7 @@ import { ZodError, type ZodType } from "zod";
 import { AppError, forbidden, tooManyRequests, unauthorized } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { rateLimit } from "@/lib/rate-limit";
-import { SESSION_COOKIE, validateSessionToken, type SessionUser } from "@/lib/auth/session";
+import { resolveRequestUser, SESSION_COOKIE, type SessionUser } from "@/lib/auth/session";
 
 type Params = Record<string, string>;
 
@@ -107,7 +107,7 @@ export function route<P extends Params = Params>(handler: (ctx: Ctx<P>) => Promi
       const ip = clientIp(req);
       let user: SessionUser | null = null;
       if (opts.auth !== false) {
-        user = await validateSessionToken(req.cookies.get(SESSION_COOKIE)?.value);
+        user = await resolveRequestUser(req.cookies.get(SESSION_COOKIE)?.value, req.headers.get("host"));
         if (!user) throw unauthorized();
       }
       const [limit, windowMs] = opts.rateLimit ?? (UNSAFE.has(req.method) ? [60, 60_000] : [300, 60_000]);

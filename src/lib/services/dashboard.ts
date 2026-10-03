@@ -33,11 +33,11 @@ export async function engineStatus() {
 
 export async function getDashboard(userId: string, timezone: string) {
   const since = startOfDayInTz(timezone);
-  const [total, active, triggeredToday, bots, recent, recentEvents, failed24h, engine] = await Promise.all([
+  const [total, active, triggeredToday, allBots, recent, recentEvents, failed24h, engine] = await Promise.all([
     db.alert.count({ where: { userId } }),
     db.alert.count({ where: { userId, status: "ACTIVE" } }),
     db.alertEvent.count({ where: { userId, isTest: false, triggeredAt: { gte: since } } }),
-    db.telegramBot.findMany({ where: { userId }, select: { status: true, name: true, lastError: true } }),
+    db.telegramBot.findMany({ where: { userId }, select: { status: true, name: true, lastError: true, enabled: true } }),
     db.alert.findMany({
       where: { userId },
       include: { bot: { select: { id: true, name: true, status: true, chatId: true, chatTitle: true } } },
@@ -53,6 +53,8 @@ export async function getDashboard(userId: string, timezone: string) {
     engineStatus(),
   ]);
 
+  // Disabled bots don't count towards connectivity.
+  const bots = allBots.filter((b) => b.enabled);
   const telegramStatus: TelegramAggregateStatus = !bots.length
     ? "DISCONNECTED"
     : bots.some((b) => b.status === "ERROR")
@@ -71,6 +73,7 @@ export async function getDashboard(userId: string, timezone: string) {
     telegram: {
       status: telegramStatus,
       bots: bots.length,
+      disabled: allBots.length - bots.length,
       connected: bots.filter((b) => b.status === "CONNECTED").length,
       error: bots.find((b) => b.status === "ERROR")?.lastError ?? null,
     },

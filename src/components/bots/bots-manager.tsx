@@ -7,7 +7,7 @@ import { Bot, CheckCircle2, KeyRound, Loader2, MessageSquare, MoreHorizontal, Pe
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, Badge } from "@/components/ui/misc";
+import { Card, Badge, Switch } from "@/components/ui/misc";
 import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -27,6 +27,7 @@ interface BotDTO {
   botUsername: string | null;
   chatId: string;
   chatTitle: string | null;
+  enabled: boolean;
   status: "CONNECTED" | "DISCONNECTED" | "ERROR";
   lastError: string | null;
   lastCheckedAt: string | null;
@@ -75,6 +76,23 @@ export function BotsManager({ bots }: { bots: BotDTO[] }) {
     }
   }
 
+  async function setEnabled(b: BotDTO, enabled: boolean) {
+    setBusy(`${b.id}:enabled`);
+    try {
+      await api(`/api/telegram/bots/${b.id}`, { method: "PUT", body: { enabled } });
+      toast.success(
+        enabled
+          ? `${b.name} enabled`
+          : `${b.name} disabled. Its alerts still trigger and are recorded, but no messages are sent.`,
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function remove(b: BotDTO) {
     try {
       const r = await api<{ affectedAlerts: number }>(`/api/telegram/bots/${b.id}`, { method: "DELETE" });
@@ -97,15 +115,26 @@ export function BotsManager({ bots }: { bots: BotDTO[] }) {
           return (
             <Card key={b.id} className="flex min-w-0 flex-col">
               <div className="flex items-start gap-3 p-5">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-telegram/12 text-telegram">
+                <span
+                  className={cn(
+                    "flex size-10 shrink-0 items-center justify-center rounded-full",
+                    b.enabled ? "bg-telegram/12 text-telegram" : "bg-muted text-muted-foreground",
+                  )}
+                >
                   <Bot className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h2 className="truncate font-semibold">{b.name}</h2>
-                    <Badge variant={s.variant}>
-                      <span className={cn("size-1.5 rounded-full", s.dot)} /> {s.label}
-                    </Badge>
+                    {b.enabled ? (
+                      <Badge variant={s.variant}>
+                        <span className={cn("size-1.5 rounded-full", s.dot)} /> {s.label}
+                      </Badge>
+                    ) : (
+                      <Badge variant="muted">
+                        <span className="size-1.5 rounded-full border border-muted-foreground" /> Disabled
+                      </Badge>
+                    )}
                   </div>
                   <div className="truncate text-sm text-muted-foreground">
                     {b.botUsername ? `@${b.botUsername}` : "Bot not verified yet"}
@@ -156,13 +185,44 @@ export function BotsManager({ bots }: { bots: BotDTO[] }) {
                 <div className="col-span-2 text-xs text-muted-foreground">
                   Last checked <RelativeTime date={b.lastCheckedAt} fallback="never" />
                 </div>
+                <label className="col-span-2 flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                  <span>
+                    <span className="block text-sm font-medium">Send messages</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {b.enabled ? "Alerts using this bot notify you." : "Off: alerts still trigger and are logged, nothing is sent."}
+                    </span>
+                  </span>
+                  <Switch
+                    checked={b.enabled}
+                    disabled={busy === `${b.id}:enabled`}
+                    onCheckedChange={(c) => setEnabled(b, c)}
+                    aria-label={`${b.enabled ? "Disable" : "Enable"} ${b.name}`}
+                  />
+                </label>
               </dl>
-              {b.lastError && <p className="mx-5 mb-4 rounded-md bg-destructive/8 px-3 py-2 text-xs text-destructive">{b.lastError}</p>}
+              {b.lastError && (
+                <p
+                  className={cn(
+                    "mx-5 mb-4 rounded-md px-3 py-2 text-xs",
+                    b.lastError.startsWith("Chat ID updated automatically")
+                      ? "bg-muted text-muted-foreground"
+                      : "bg-destructive/8 text-destructive",
+                  )}
+                >
+                  {b.lastError}
+                </p>
+              )}
               <div className="mt-auto flex flex-col gap-2 border-t p-4 sm:flex-row">
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => verify(b)} disabled={!!busy}>
                   {busy === `${b.id}:verify` ? <Loader2 className="animate-spin" /> : <RefreshCw />} Test connection
                 </Button>
-                <Button size="sm" className="flex-1" onClick={() => test(b)} disabled={!!busy}>
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => test(b)}
+                  disabled={!!busy || !b.enabled}
+                  title={b.enabled ? undefined : "Enable the bot to send messages"}
+                >
                   {busy === `${b.id}:test` ? <Loader2 className="animate-spin" /> : <Send />} Test Telegram Message
                 </Button>
               </div>
@@ -247,13 +307,21 @@ function BotDialog({ bot, onClose, onSaved }: { bot: BotDTO | "new" | null; onCl
     setTesting(true);
     setTestResult(null);
     try {
-      const r = await api<{ result: { status: string; error?: string; chatTitle?: string } }>("/api/telegram/test", {
+      const r = await api<{ result: { status: string; error?: string; chatTitle?: string; chatId?: string } }>("/api/telegram/test", {
         method: "POST",
         body: { token: token.trim(), chatId: chatId.trim() },
       });
+      // Telegram may report a new ID for a group that was upgraded to a supergroup — save that one.
+      const migrated = r.result.chatId && r.result.chatId !== chatId.trim() ? r.result.chatId : null;
+      if (migrated) setChatId(migrated);
       setTestResult(
         r.result.status === "sent"
-          ? { ok: true, text: `Message delivered to ${r.result.chatTitle ?? chatId}. Check Telegram.` }
+          ? {
+              ok: true,
+              text: `Message delivered to ${r.result.chatTitle ?? chatId}. Check Telegram.${
+                migrated ? ` This group was upgraded, so its Chat ID changed to ${migrated} — updated above.` : ""
+              }`,
+            }
           : { ok: false, text: r.result.error ?? "Telegram message could not be delivered." },
       );
     } catch (err) {

@@ -7,7 +7,15 @@ import type { ParseModeT } from "@/lib/constants";
  */
 
 export type TelegramErrorKind =
-  "invalid_token" | "chat_not_found" | "bot_blocked" | "parse_error" | "bad_request" | "rate_limited" | "server_error" | "network";
+  | "invalid_token"
+  | "chat_not_found"
+  | "chat_migrated"
+  | "bot_blocked"
+  | "parse_error"
+  | "bad_request"
+  | "rate_limited"
+  | "server_error"
+  | "network";
 
 export class TelegramError extends Error {
   constructor(
@@ -15,6 +23,8 @@ export class TelegramError extends Error {
     public description: string,
     public httpStatus?: number,
     public retryAfterSec?: number,
+    /** Set when a group was upgraded to a supergroup: Telegram reports the chat's new permanent ID. */
+    public migrateToChatId?: string,
   ) {
     super(description);
     this.name = "TelegramError";
@@ -32,6 +42,8 @@ export class TelegramError extends Error {
         return "Telegram rejected the bot token. Please check the token from @BotFather.";
       case "chat_not_found":
         return "Telegram could not find that chat. Check the Chat ID and make sure the bot was added to the chat/channel.";
+      case "chat_migrated":
+        return `This group was upgraded to a supergroup and its Chat ID changed${this.migrateToChatId ? ` to ${this.migrateToChatId}` : ""}.`;
       case "bot_blocked":
         return "The bot is not allowed to post in this chat. Unblock the bot or give it permission to send messages.";
       case "parse_error":
@@ -48,8 +60,9 @@ export class TelegramError extends Error {
   }
 }
 
-function classify(status: number, description: string): TelegramErrorKind {
+function classify(status: number, description: string, migrateTo?: number): TelegramErrorKind {
   const d = description.toLowerCase();
+  if (migrateTo !== undefined || d.includes("upgraded to a supergroup")) return "chat_migrated";
   if (status === 401 || d.includes("unauthorized")) return "invalid_token";
   if (status === 404) return "invalid_token"; // /bot<bad token>/method returns 404 Not Found
   if (status === 429) return "rate_limited";
@@ -82,7 +95,13 @@ export async function callTelegram<T>(token: string, method: string, body: Recor
     throw new TelegramError("network", "Network error contacting Telegram");
   }
 
-  let json: { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
+  let json: {
+    ok: boolean;
+    result?: T;
+    description?: string;
+    error_code?: number;
+    parameters?: { retry_after?: number; migrate_to_chat_id?: number };
+  };
   try {
     json = await res.json();
   } catch {
@@ -91,9 +110,10 @@ export async function callTelegram<T>(token: string, method: string, body: Recor
   if (!res.ok || !json.ok) {
     const description = json.description ?? `HTTP ${res.status}`;
     const status = json.error_code ?? res.status;
-    const kind = classify(status, description);
+    const migrateTo = json.parameters?.migrate_to_chat_id;
+    const kind = classify(status, description, migrateTo);
     logger.warn("Telegram API error", { method, status, description });
-    throw new TelegramError(kind, description, status, json.parameters?.retry_after);
+    throw new TelegramError(kind, description, status, json.parameters?.retry_after, migrateTo !== undefined ? String(migrateTo) : undefined);
   }
   return json.result as T;
 }
@@ -137,10 +157,64 @@ export function sendMessage(token: string, chatId: string, text: string, parseMo
   });
 }
 
+interface TelegramUpdate {
+  update_id: number;
+  message?: { chat: TelegramChat; date: number };
+  edited_message?: { chat: TelegramChat; date: number };
+  channel_post?: { chat: TelegramChat; date: number };
+  my_chat_member?: { chat: TelegramChat; date: number };
+}
+
+export interface DiscoveredChat {
+  id: string;
+  type: TelegramChat["type"];
+  title: string;
+  lastSeen: number; // unix seconds
+}
+
+function chatTitle(chat: TelegramChat) {
+  return chat.title ?? (chat.username ? `@${chat.username}` : chat.first_name) ?? String(chat.id);
+}
+
+/**
+ * Lists chats the bot has recently seen (messages, channel posts, being added to a group), newest first,
+ * so the user can pick a Chat ID instead of copying it from raw getUpdates output.
+ * No `offset` is sent, so updates are NOT acknowledged/consumed — this is read-only for the bot.
+ * Telegram keeps pending updates for 24 h; a bot with a webhook set cannot use getUpdates (409).
+ */
+export async function discoverChats(token: string) {
+  const me = await getMe(token);
+  let updates: TelegramUpdate[];
+  try {
+    updates = await callTelegram<TelegramUpdate[]>(token, "getUpdates", { limit: 100, timeout: 0 });
+  } catch (err) {
+    if (err instanceof TelegramError && err.httpStatus === 409) {
+      return {
+        botUsername: me.username ?? me.first_name,
+        chats: [] as DiscoveredChat[],
+        error: "This bot has a webhook set, so its recent chats can't be listed. Enter the Chat ID manually.",
+      };
+    }
+    throw err;
+  }
+  const byId = new Map<string, DiscoveredChat>();
+  for (const u of updates) {
+    const src = u.message ?? u.edited_message ?? u.channel_post ?? u.my_chat_member;
+    if (!src) continue;
+    const id = String(src.chat.id);
+    const prev = byId.get(id);
+    if (!prev || prev.lastSeen < src.date) byId.set(id, { id, type: src.chat.type, title: chatTitle(src.chat), lastSeen: src.date });
+  }
+  return {
+    botUsername: me.username ?? me.first_name,
+    chats: [...byId.values()].sort((a, b) => b.lastSeen - a.lastSeen),
+    error: null as string | null,
+  };
+}
+
 /** Verifies token + chat: returns bot identity and chat title, or throws TelegramError. */
 export async function verifyConnection(token: string, chatId: string) {
   const me = await getMe(token);
   const chat = await getChat(token, chatId);
-  const chatTitle = chat.title ?? (chat.username ? `@${chat.username}` : chat.first_name) ?? String(chat.id);
-  return { botUsername: me.username ?? me.first_name, chatTitle, chatType: chat.type };
+  return { botUsername: me.username ?? me.first_name, chatTitle: chatTitle(chat), chatType: chat.type };
 }

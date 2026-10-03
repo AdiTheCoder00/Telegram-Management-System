@@ -1,9 +1,10 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { NextResponse } from "next/server";
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { hmac, randomToken } from "@/lib/crypto";
 import { authSecret } from "@/lib/env";
+import { getLocalOwner, localAccessAllowed } from "@/lib/auth/local-mode";
 
 export const SESSION_COOKIE = "tam_session";
 /** Idle timeout: a session expires after 30 days without use (renewed on activity). */
@@ -93,11 +94,24 @@ export async function validateSessionToken(token: string | undefined | null): Pr
   return { ...session.user, sessionId: session.id };
 }
 
-/** Returns the signed-in user for the current request (memoised per request). Server components only. */
+/**
+ * Returns the signed-in user for the current request (memoised per request). Server components only.
+ * In local mode (see local-mode.ts) requests from this computer get the owner without signing in.
+ */
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
-  return validateSessionToken(jar.get(SESSION_COOKIE)?.value);
+  const user = await validateSessionToken(jar.get(SESSION_COOKIE)?.value);
+  if (user) return user;
+  const h = await headers();
+  return localAccessAllowed(h.get("host")) ? getLocalOwner() : null;
 });
+
+/** Same resolution for route handlers, from the request's cookie and Host header. */
+export async function resolveRequestUser(token: string | undefined, host: string | null): Promise<SessionUser | null> {
+  const user = await validateSessionToken(token);
+  if (user) return user;
+  return localAccessAllowed(host) ? getLocalOwner() : null;
+}
 
 export async function destroySessionByToken(token: string | undefined | null) {
   if (token) await db.session.deleteMany({ where: { tokenHash: hashSessionToken(token) } });

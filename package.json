@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/run-local.mjs dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "worker": "tsx src/worker/index.ts",
@@ -21,7 +21,8 @@
     "telegram:mock": "tsx scripts/mock-telegram.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "start:local": "node scripts/run-local.mjs start"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

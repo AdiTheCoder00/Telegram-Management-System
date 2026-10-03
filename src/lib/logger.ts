@@ -17,9 +17,9 @@ function redact(value: unknown, depth = 0): unknown {
   );
 }
 
-/** Removes bot tokens from strings such as Telegram URLs (https://api.telegram.org/bot<token>/...). */
+/** Removes Telegram bot tokens from strings — inside URLs (…/bot<token>/…) and on their own. */
 export function scrubSecrets(s: string): string {
-  return s.replace(/bot\d+:[A-Za-z0-9_-]+/g, "bot[redacted]");
+  return s.replace(/bot\d+:[A-Za-z0-9_-]+/g, "bot[redacted]").replace(/\b\d{5,15}:[A-Za-z0-9_-]{30,}/g, "[redacted-token]");
 }
 
 function log(level: Level, msg: string, meta?: Record<string, unknown>) {

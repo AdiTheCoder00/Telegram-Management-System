@@ -198,7 +198,13 @@ function Notifications() {
   );
 }
 
-export function AppShell({ user, children }: { user: { name: string | null; email: string }; children: React.ReactNode }) {
+export function AppShell({
+  user,
+  children,
+}: {
+  user: { name: string | null; email: string; localMode: boolean };
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -306,9 +312,15 @@ export function AppShell({ user, children }: { user: { name: string | null; emai
                     <Settings /> Settings
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={signOut}>
-                  <LogOut /> Sign out
-                </DropdownMenuItem>
+                {user.localMode ? (
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                    Local mode: no sign-in on this computer
+                  </DropdownMenuLabel>
+                ) : (
+                  <DropdownMenuItem onSelect={signOut}>
+                    <LogOut /> Sign out
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

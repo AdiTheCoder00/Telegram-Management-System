@@ -73,8 +73,12 @@ async function validateAlertInput(userId: string, input: AlertInput) {
   if (input.status === "ACTIVE" && !input.telegramBotId)
     throw badRequest("Choose a Telegram bot for this alert.", { fieldErrors: { telegramBotId: "Choose a Telegram bot." } });
   if (input.telegramBotId) {
-    const bot = await db.telegramBot.findFirst({ where: { id: input.telegramBotId, userId }, select: { id: true } });
+    const bot = await db.telegramBot.findFirst({ where: { id: input.telegramBotId, userId }, select: { id: true, enabled: true } });
     if (!bot) throw badRequest("Selected Telegram bot was not found.", { fieldErrors: { telegramBotId: "Bot not found." } });
+    if (input.status === "ACTIVE" && !bot.enabled)
+      throw badRequest("The selected Telegram bot is disabled. Enable it, choose another bot, or save the alert paused.", {
+        fieldErrors: { telegramBotId: "This bot is disabled." },
+      });
   }
   const issues = validateTemplate(input.messageTemplate, input.parseMode, SAMPLE_VARS).filter((i) => i.level === "error");
   if (issues.length)
@@ -165,6 +169,8 @@ export async function resumeAlert(userId: string, id: string) {
   const a = await getOwnedAlert(userId, id);
   if (isExpiredByDate(a, new Date())) throw badRequest("This alert's expiry date has passed. Edit the alert to set a new date.");
   if (!a.telegramBotId) throw badRequest("Assign a Telegram bot to this alert before resuming it.");
+  const bot = await db.telegramBot.findUnique({ where: { id: a.telegramBotId }, select: { enabled: true } });
+  if (bot && !bot.enabled) throw badRequest("This alert’s Telegram bot is disabled. Enable the bot before resuming the alert.");
   const resetBudget = a.status === "TRIGGERED" || a.status === "EXPIRED";
   const alert = await db.alert.update({
     where: { id },

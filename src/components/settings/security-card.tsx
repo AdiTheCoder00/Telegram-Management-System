@@ -47,7 +47,70 @@ function describeAgent(ua: string | null) {
   return { label: os ? `${browser} on ${os}` : browser, mobile: /Mobile|Android|iPhone/.test(ua) };
 }
 
-export function SecurityCard() {
+/**
+ * Password + signed-in devices. In local mode (no sign-in on this computer) it only offers setting a password,
+ * which is what you'd use if you later switch AUTH_MODE back to "password".
+ */
+export function SecurityCard({ localMode }: { localMode: boolean }) {
+  if (localMode) return <LocalModeSecurity />;
+  return <AccountSecurity />;
+}
+
+function LocalModeSecurity() {
+  const [next, setNext] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function setPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await api("/api/auth/password", { method: "POST", body: { newPassword: next } });
+      setNext("");
+      toast.success("Password set. You'll need it if sign-in is turned back on.");
+    } catch (err) {
+      setError(err instanceof ApiError ? (err.fieldErrors.newPassword ?? err.message) : errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="min-w-0 p-5 lg:col-span-2">
+      <h2 className="font-semibold">Security</h2>
+      <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+        Sign-in is off on this computer (<code className="text-foreground">AUTH_MODE=local</code>). The app only accepts connections from
+        this machine, so nobody else on your network can open it. To require a password again, set{" "}
+        <code className="text-foreground">AUTH_MODE=password</code> and restart.
+      </p>
+      <form onSubmit={setPassword} className="mt-4 max-w-sm space-y-3" noValidate>
+        <div>
+          <Label htmlFor="pw-set">Set a password for sign-in</Label>
+          <Input
+            id="pw-set"
+            type="password"
+            autoComplete="new-password"
+            className="mt-1.5"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            aria-invalid={!!error}
+          />
+          {error ? (
+            <p className="mt-1 text-xs text-destructive">{error}</p>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">At least 10 characters, with a letter and a number. Not needed while local mode is on.</p>
+          )}
+        </div>
+        <Button type="submit" variant="outline" disabled={saving || !next}>
+          {saving && <Loader2 className="animate-spin" />} Set password
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+function AccountSecurity() {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");

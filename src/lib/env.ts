@@ -88,6 +88,15 @@ export function checkEnv(): EnvReport {
   if (e.WEBHOOK_SECRET && e.WEBHOOK_SECRET.length < 16) errors.push("WEBHOOK_SECRET must be at least 16 characters.");
   if (prod && e.TELEGRAM_API_URL !== "https://api.telegram.org")
     warnings.push(`TELEGRAM_API_URL points to ${e.TELEGRAM_API_URL}, not the official Telegram API.`);
+  const authMode = process.env.AUTH_MODE || "password";
+  if (!["password", "local"].includes(authMode)) errors.push(`AUTH_MODE must be "password" or "local" (got "${authMode}").`);
+  if (authMode === "local") {
+    if (process.env.LEVELS_LOOPBACK_ONLY === "1") warnings.push("AUTH_MODE=local: no sign-in for http://localhost (server bound to 127.0.0.1 only).");
+    else
+      warnings.push(
+        "AUTH_MODE=local is ignored: this server was not started with `npm run dev` / `npm run start:local` (loopback-only), so sign-in stays required.",
+      );
+  }
   if (e.DEFAULT_MARKET_DATA_PROVIDER === "simulated")
     warnings.push("DEFAULT_MARKET_DATA_PROVIDER is 'simulated' (mock prices, not live data).");
   if (e.DEFAULT_MARKET_DATA_PROVIDER === "twelvedata" && !e.MARKET_DATA_API_KEY)

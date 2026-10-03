@@ -57,7 +57,9 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-1 truncate text-xs text-muted-foreground">
             {d.telegram.bots === 0
-              ? "Add a bot to receive alerts"
+              ? d.telegram.disabled
+                ? `All ${d.telegram.disabled} bot${d.telegram.disabled === 1 ? " is" : "s are"} disabled`
+                : "Add a bot to receive alerts"
               : (d.telegram.error ?? `${d.telegram.connected} of ${d.telegram.bots} bot${d.telegram.bots === 1 ? "" : "s"} connected`)}
           </div>
         </Link>
