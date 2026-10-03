@@ -45,6 +45,18 @@ deliveries are safe with several).
 
 After every deploy with migrations: run `npm run db:deploy`, then restart **web and worker**.
 
+## 3. Docker Compose
+
+`docker-compose.yml` runs PostgreSQL, Redis, a one-shot `migrate` job, the web app and the worker:
+
+```bash
+docker compose up -d --build      # everything; secrets come from .env
+docker compose up -d db redis     # only infrastructure, run the app with npm
+```
+
+Containers always require sign-in (local mode needs a loopback-bound process). Back up with
+`npm run db:backup` pointed at the container's database, or use `pg_dump` from the `db` container.
+
 ## Health endpoints
 
 `/api/health/database`, `/api/health/redis`, `/api/health/market-data`, `/api/health/workers` — for uptime

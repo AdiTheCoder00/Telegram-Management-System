@@ -19,6 +19,17 @@ getSeries({ provider, symbol, timeframe, asOf, bars, scope? })
 
 Capabilities are checked when an alert is saved/activated and when a backtest is created.
 
+## Twelve Data setup
+
+1. Create an account at twelvedata.com and copy your API key (free tier: 8 requests/min, 800/day).
+2. In `.env`: `TWELVE_DATA_API_KEY=<key>` and `MARKET_DATA_PROVIDER=twelvedata` (default for new alerts).
+3. Restart the web server and the worker. The System page shows Twelve Data as "ok" after its first success.
+4. Symbols: `XAUUSD`, `EURUSD`, `BTCUSD`, … are mapped to Twelve Data's `XAU/USD` style automatically; for anything
+   unusual set the provider symbol on the instrument.
+
+The budget is shared by live polling, candle fetches and backtest history loading; backtests wait for budget
+instead of failing. Cached candles are reused, so repeated backtests over the same range cost no requests.
+
 ## How a series is built
 
 1. **Native timeframe** → DB cache (`Candle`, scope `global`), fetching only what's missing; served from cache
