@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Copy, FlaskConical, Loader2, MoreHorizontal, Pause, Pencil, Play, Plus, Search, Send, Trash2 } from "lucide-react";
+import { Copy, FlaskConical, Loader2, MoreHorizontal, Pause, Pencil, Play, Plus, Search, Send, Trash2, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -278,6 +278,13 @@ export function AlertsTable({
                               <Copy /> Duplicate
                             </Link>
                           </DropdownMenuItem>
+                          {a.kind === "CONDITIONS" && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/alerts/${a.id}/debug`}>
+                                <Bug /> Debug conditions
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
                           {a.status === "ACTIVE" ? (
                             <DropdownMenuItem onSelect={() => act(a, "pause")}>
                               <Pause /> Pause

@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LevelLadder } from "@/components/alerts/level-ladder";
 import { ConditionBuilder, defaultTree, describeTree } from "@/components/alerts/condition-builder";
+import { ConditionDebugger } from "@/components/alerts/condition-debugger";
 import type { ConditionNode } from "@/lib/conditions/types";
 import { TIMEFRAMES, TIMEFRAME_LABELS, type Timeframe } from "@/lib/market/timeframes";
 import { TelegramBubble } from "@/components/telegram-preview";
@@ -578,6 +579,25 @@ export function AlertForm({
                 baseTimeframe={v.timeframe}
                 error={errors.conditionTree}
               />
+              <div className="rounded-lg border border-dashed p-3">
+                <div className="mb-2 text-sm font-medium">Test these conditions</div>
+                <ConditionDebugger
+                  compact
+                  body={() =>
+                    v.conditionTree
+                      ? {
+                          config: {
+                            symbol: v.symbol,
+                            dataProvider: v.dataProvider,
+                            timeframe: v.timeframe,
+                            evaluationMode: v.evaluationMode,
+                            conditionTree: v.conditionTree,
+                          },
+                        }
+                      : null
+                  }
+                />
+              </div>
             </div>
           ) : (
             <>
