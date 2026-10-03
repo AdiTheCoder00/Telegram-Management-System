@@ -88,9 +88,15 @@ describe("MACD / Bollinger / ATR / oscillators", () => {
     expect(I.atr(cs, 2)[2]).toBeCloseTo((0.5 * 1 + 1) / 2, 10);
   });
   it("oscillators stay within their ranges", () => {
-    for (const v of I.stochastic(c).k) if (v !== null) expect(v).toBeGreaterThanOrEqual(0) && expect(v).toBeLessThanOrEqual(100);
-    for (const v of I.williamsR(c)) if (v !== null) expect(v).toBeGreaterThanOrEqual(-100) && expect(v).toBeLessThanOrEqual(0);
-    for (const v of I.stochRsi(closes).k) if (v !== null) expect(v).toBeGreaterThanOrEqual(0) && expect(v).toBeLessThanOrEqual(100);
+    const within = (vals: (number | null)[], lo: number, hi: number) => {
+      const xs = vals.filter((v): v is number => v !== null);
+      expect(xs.length).toBeGreaterThan(0);
+      expect(Math.min(...xs)).toBeGreaterThanOrEqual(lo);
+      expect(Math.max(...xs)).toBeLessThanOrEqual(hi);
+    };
+    within(I.stochastic(c).k, 0, 100);
+    within(I.williamsR(c), -100, 0);
+    within(I.stochRsi(closes).k, 0, 100);
   });
   it("VWAP resets daily and is null without volume", () => {
     const noVol = candlesFromCloses([1, 2, 3], "1h", undefined, { volume: () => null });
