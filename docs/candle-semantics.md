@@ -4,10 +4,8 @@ These rules are what make live alerts, the debugger and backtests agree.
 
 ## The canonical candle
 
-```ts
-{
-  (openTime, closeTime, open, high, low, close, volume | null, volumeType, state);
-}
+```text
+{ openTime, closeTime, open, high, low, close, volume | null, volumeType, state }
 ```
 
 - `openTime` is **inclusive**, `closeTime` is **exclusive**: the candle covers `[openTime, closeTime)`.
