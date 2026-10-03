@@ -22,7 +22,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "start:local": "node scripts/run-local.mjs start"
+    "start:local": "node scripts/run-local.mjs start",
+    "db:backup": "tsx scripts/backup.ts backup",
+    "db:restore": "tsx scripts/backup.ts restore"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
