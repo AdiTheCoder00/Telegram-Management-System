@@ -11,6 +11,7 @@ import { Card, Switch } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ConditionLabel, DeliveryBadge } from "@/components/status";
+import { EvidencePanel } from "@/components/history/evidence-panel";
 import { formatPrice, cn } from "@/lib/utils";
 import type { HistoryItem, DeliveryLogItem } from "@/lib/services/history";
 
@@ -192,6 +193,7 @@ function Empty({ text }: { text: string }) {
 }
 
 function TriggersTable({ items }: { items: Json<HistoryItem>[] }) {
+  const [open, setOpen] = useState<string | null>(null);
   if (!items.length) return <Empty text="No triggers match these filters. When an alert fires it is recorded here." />;
   return (
     <Table>
@@ -205,34 +207,65 @@ function TriggersTable({ items }: { items: Json<HistoryItem>[] }) {
           <TableHead>Telegram bot</TableHead>
           <TableHead>Delivery</TableHead>
           <TableHead>Error</TableHead>
+          <TableHead>
+            <span className="sr-only">Why</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {items.map((e) => (
-          <TableRow key={e.id}>
-            <TableCell className="tabular text-muted-foreground">{fmtDate(e.triggeredAt)}</TableCell>
-            <TableCell className="max-w-56">
-              <div className="flex items-center gap-1.5">
-                {e.isTest && <span className="rounded bg-muted px-1 py-0.5 text-[11px] font-medium text-muted-foreground">Test</span>}
-                {e.alertId ? (
-                  <Link href={`/alerts/${e.alertId}/edit`} className="truncate font-medium hover:underline">
-                    {e.alertName}
-                  </Link>
+          <Fragment key={e.id}>
+            <TableRow>
+              <TableCell className="tabular text-muted-foreground">{fmtDate(e.triggeredAt)}</TableCell>
+              <TableCell className="max-w-56">
+                <div className="flex items-center gap-1.5">
+                  {e.isTest && <span className="rounded bg-muted px-1 py-0.5 text-[11px] font-medium text-muted-foreground">Test</span>}
+                  {e.alertId ? (
+                    <Link href={`/alerts/${e.alertId}/edit`} className="truncate font-medium hover:underline">
+                      {e.alertName}
+                    </Link>
+                  ) : (
+                    <span className="truncate font-medium">{e.alertName}</span>
+                  )}
+                </div>
+                {e.evidence?.timeframe ? (
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Conditions · {e.evidence.timeframe}
+                    {e.alertVersion ? ` · v${e.alertVersion}` : ""}
+                  </span>
                 ) : (
-                  <span className="truncate font-medium">{e.alertName}</span>
+                  <ConditionLabel condition={e.conditionType} className="text-xs" />
                 )}
-              </div>
-              <ConditionLabel condition={e.conditionType} className="text-xs" />
-            </TableCell>
-            <TableCell className="font-semibold">{e.symbol}</TableCell>
-            <TableCell className="text-right font-medium tabular">{formatPrice(e.triggerPrice)}</TableCell>
-            <TableCell className="text-right tabular text-muted-foreground">{formatPrice(e.targetPrice)}</TableCell>
-            <TableCell>{e.delivery?.botName ?? "—"}</TableCell>
-            <TableCell>
-              <DeliveryBadge status={e.delivery?.status ?? e.status} />
-            </TableCell>
-            <TableCell className="max-w-72 whitespace-normal text-xs text-destructive">{e.delivery?.error ?? ""}</TableCell>
-          </TableRow>
+              </TableCell>
+              <TableCell className="font-semibold">{e.symbol}</TableCell>
+              <TableCell className="text-right font-medium tabular">{formatPrice(e.triggerPrice)}</TableCell>
+              <TableCell className="text-right tabular text-muted-foreground">{e.targetPrice ? formatPrice(e.targetPrice) : "—"}</TableCell>
+              <TableCell>{e.delivery?.botName ?? "—"}</TableCell>
+              <TableCell>
+                <DeliveryBadge status={e.delivery?.status ?? e.status} />
+              </TableCell>
+              <TableCell className="max-w-72 whitespace-normal text-xs text-destructive">{e.delivery?.error ?? ""}</TableCell>
+              <TableCell className="text-right">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setOpen(open === e.id ? null : e.id)}
+                  aria-expanded={open === e.id}
+                  aria-label="Why did this alert trigger?"
+                >
+                  Why?
+                  <ChevronDown className={cn("transition-transform", open === e.id && "rotate-180")} />
+                </Button>
+              </TableCell>
+            </TableRow>
+            {open === e.id && (
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableCell colSpan={9} className="whitespace-normal">
+                  <EvidencePanel eventId={e.id} />
+                </TableCell>
+              </TableRow>
+            )}
+          </Fragment>
         ))}
       </TableBody>
     </Table>

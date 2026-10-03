@@ -68,6 +68,9 @@ describe("enable / disable", () => {
     const bot = await makeBot(userId, { enabled: false });
     const input = {
       name: "On disabled bot",
+      kind: "PRICE" as const,
+      timeframe: "5m" as const,
+      evaluationMode: "CANDLE_CLOSE" as const,
       symbol: "XAUUSD",
       dataProvider: "webhook",
       conditionType: "PRICE_ABOVE" as const,

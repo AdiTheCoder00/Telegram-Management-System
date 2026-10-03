@@ -1,7 +1,7 @@
 "use client";
 
 import { formatDistanceToNowStrict } from "date-fns";
-import { ArrowDownRight, ArrowUpRight, Check, Clock, Equal, X } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Check, Clock, Equal, X, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/misc";
 import { CONDITION_SHORT, type AlertStatusT, type ConditionTypeT, type DeliveryStatusT } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -81,5 +81,23 @@ export function RelativeTime({ date, fallback = "—" }: { date: string | Date |
     <time dateTime={d.toISOString()} title={d.toLocaleString()} className="text-muted-foreground">
       {formatDistanceToNowStrict(d, { addSuffix: true })}
     </time>
+  );
+}
+
+/** Condition column for alert rows: price-level label, or "Conditions · 5m" for condition-tree alerts. */
+export function AlertConditionCell({
+  alert,
+}: {
+  alert: { kind: string; conditionType: ConditionTypeT; timeframe: string; evaluationMode: string };
+}) {
+  if (alert.kind !== "CONDITIONS") return <ConditionLabel condition={alert.conditionType} />;
+  return (
+    <span
+      className="inline-flex items-center gap-1 font-medium text-muted-foreground"
+      title={alert.evaluationMode === "CANDLE_CLOSE" ? "Evaluated on candle close" : "Evaluated intrabar"}
+    >
+      <SlidersHorizontal className="size-4" />
+      Conditions · {alert.timeframe}
+    </span>
   );
 }

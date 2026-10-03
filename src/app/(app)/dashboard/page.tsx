@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/app-shell";
 import { Card } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertStatusBadge, ConditionLabel, DeliveryBadge, RelativeTime } from "@/components/status";
+import { AlertStatusBadge, AlertConditionCell, DeliveryBadge, RelativeTime } from "@/components/status";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { cn, formatPrice } from "@/lib/utils";
 
@@ -143,9 +143,11 @@ export default async function DashboardPage() {
                         <div className="max-w-44 truncate text-xs text-muted-foreground">{a.name}</div>
                       </TableCell>
                       <TableCell>
-                        <ConditionLabel condition={a.conditionType} />
+                        <AlertConditionCell alert={a} />
                       </TableCell>
-                      <TableCell className="text-right font-medium tabular">{formatPrice(a.targetPrice)}</TableCell>
+                      <TableCell className="text-right font-medium tabular">
+                        {a.kind === "CONDITIONS" ? "—" : formatPrice(a.targetPrice)}
+                      </TableCell>
                       <TableCell className="text-right text-muted-foreground tabular">{formatPrice(a.currentPrice)}</TableCell>
                       <TableCell>
                         <AlertStatusBadge status={a.status} />

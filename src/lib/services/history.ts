@@ -1,3 +1,4 @@
+import { notFound } from "@/lib/errors";
 import type { DeliveryStatusT } from "@/lib/constants";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
@@ -27,6 +28,7 @@ export async function getHistory(userId: string, q: HistoryQuery) {
           take: 1,
           include: { bot: { select: { id: true, name: true } } },
         },
+        evidence: { select: { id: true, reason: true, timeframe: true, evaluationMode: true, candleOpenTime: true, alertVersion: true } },
       },
     }),
   ]);
@@ -49,6 +51,8 @@ export async function getHistory(userId: string, q: HistoryQuery) {
         triggeredAt: e.triggeredAt,
         isTest: e.isTest,
         status: e.status,
+        alertVersion: e.alertVersion,
+        evidence: e.evidence,
         delivery: d
           ? {
               id: d.id,
@@ -105,3 +109,45 @@ export async function getDeliveryLogs(userId: string, q: { status?: DeliveryStat
   };
 }
 export type DeliveryLogItem = Awaited<ReturnType<typeof getDeliveryLogs>>["items"][number];
+
+/**
+ * Full trigger evidence for one history event ("Why did this alert trigger?"): the immutable record written in
+ * the same transaction as the event — market data used, candle, evaluation tree with every operand's value,
+ * engine versions and the alert configuration version that was active.
+ */
+export async function getEventEvidence(userId: string, eventId: string) {
+  const event = await db.alertEvent.findFirst({
+    where: { id: eventId, userId },
+    include: {
+      evidence: true,
+      deliveries: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, status: true, attempts: true, error: true, sentAt: true, createdAt: true },
+      },
+    },
+  });
+  if (!event) throw notFound("History event");
+  const version =
+    event.alertId && event.alertVersion
+      ? await db.alertVersion.findUnique({ where: { alertId_version: { alertId: event.alertId, version: event.alertVersion } } })
+      : null;
+  return {
+    event: {
+      id: event.id,
+      alertId: event.alertId,
+      alertName: event.alertName,
+      symbol: event.symbol,
+      triggeredAt: event.triggeredAt,
+      triggerPrice: event.triggerPrice,
+      previousPrice: event.previousPrice,
+      targetPrice: event.targetPrice,
+      conditionType: event.conditionType,
+      isTest: event.isTest,
+      status: event.status,
+      alertVersion: event.alertVersion,
+    },
+    evidence: event.evidence,
+    config: version?.config ?? null,
+    deliveries: event.deliveries,
+  };
+}

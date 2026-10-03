@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AlertStatusBadge, ConditionLabel, RelativeTime } from "@/components/status";
+import { AlertStatusBadge, AlertConditionCell, RelativeTime } from "@/components/status";
 import { api, errorMessage } from "@/lib/client-api";
 import { cn, formatPrice } from "@/lib/utils";
 import type { AlertDTO } from "@/lib/services/alerts";
@@ -218,9 +218,11 @@ export function AlertsTable({
                   </TableCell>
                   <TableCell className="font-semibold">{a.symbol}</TableCell>
                   <TableCell>
-                    <ConditionLabel condition={a.conditionType} />
+                    <AlertConditionCell alert={a} />
                   </TableCell>
-                  <TableCell className="text-right font-medium tabular">{formatPrice(a.targetPrice)}</TableCell>
+                  <TableCell className="text-right font-medium tabular">
+                    {a.kind === "CONDITIONS" ? "—" : formatPrice(a.targetPrice)}
+                  </TableCell>
                   <TableCell className="text-right tabular text-muted-foreground">{formatPrice(a.currentPrice)}</TableCell>
                   <TableCell className="max-w-40 truncate">
                     {a.bot ? a.bot.name : <span className="text-destructive">No bot</span>}

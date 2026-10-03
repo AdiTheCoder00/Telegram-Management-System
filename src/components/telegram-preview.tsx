@@ -215,8 +215,13 @@ export function TelegramBubble({
       </div>
       <div className="bg-tg-chat bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.35),transparent_40%)] p-3.5 dark:bg-none">
         <div className="relative max-w-[92%] rounded-2xl rounded-bl-md bg-tg-bubble px-3 pt-2 pb-5 text-[14px] leading-[1.4] text-foreground shadow-sm">
-          <div className="break-words whitespace-pre-wrap">{renderTelegram(text, mode)}</div>
-          <span className="absolute right-2.5 bottom-1 text-[11px] text-muted-foreground">{time}</span>
+          {/* The preview contains the current time, which legitimately differs between server render and hydration. */}
+          <div className="break-words whitespace-pre-wrap" suppressHydrationWarning>
+            {renderTelegram(text, mode)}
+          </div>
+          <span className="absolute right-2.5 bottom-1 text-[11px] text-muted-foreground" suppressHydrationWarning>
+            {time}
+          </span>
         </div>
       </div>
     </div>

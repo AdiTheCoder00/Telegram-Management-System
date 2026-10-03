@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { conditionSchema } from "@/lib/conditions/types";
+import { TIMEFRAMES } from "@/lib/market/timeframes";
 import { ALERT_STATUSES, CONDITION_TYPES, DELIVERY_STATUSES, EXPIRY_TYPES, PARSE_MODES, TRIGGER_MODES } from "@/lib/constants";
 
 // ─── Auth ───────────────────────────────────────────────────────────────────
@@ -98,8 +100,14 @@ const alertBase = z.object({
   name: z.string().trim().min(1, "Give the alert a name.").max(100),
   symbol: symbolSchema,
   dataProvider: z.string().trim().min(1).max(40),
-  conditionType: z.enum(CONDITION_TYPES),
-  targetPrice: finitePositive,
+  /** PRICE = single price level (conditionType/targetPrice); CONDITIONS = condition tree on candles. */
+  kind: z.enum(["PRICE", "CONDITIONS"]).default("PRICE"),
+  conditionType: z.enum(CONDITION_TYPES).default("PRICE_ABOVE"),
+  targetPrice: finitePositive.optional(),
+  timeframe: z.enum(TIMEFRAMES).default("5m"),
+  evaluationMode: z.enum(["EVERY_TICK", "CANDLE_CLOSE"]).default("CANDLE_CLOSE"),
+  /** Validated structurally by conditionSchema and semantically by the alert service (validateTree, capabilities). */
+  conditionTree: z.unknown().optional(),
   tolerance: z.coerce.number().min(0).max(1e9).default(0),
   telegramBotId: z.string().min(1).max(40).nullable(),
   messageTemplate: z.string().trim().min(1, "Message cannot be empty.").max(3500, "Message template is too long (max 3500 chars)."),
@@ -119,6 +127,12 @@ const alertBase = z.object({
 type AlertBase = z.infer<typeof alertBase>;
 
 function refineAlert(v: Partial<AlertBase>, ctx: z.RefinementCtx) {
+  if (v.kind !== "CONDITIONS" && v.targetPrice === undefined)
+    ctx.addIssue({ code: "custom", path: ["targetPrice"], message: "Enter a target price." });
+  if (v.kind === "CONDITIONS") {
+    const r = conditionSchema.safeParse(v.conditionTree);
+    if (!r.success) ctx.addIssue({ code: "custom", path: ["conditionTree"], message: "Add at least one valid condition." });
+  }
   if (v.expiryType === "AT_DATE") {
     if (!v.expiresAt) ctx.addIssue({ code: "custom", path: ["expiresAt"], message: "Choose an expiry date/time." });
     else if (v.expiresAt.getTime() <= Date.now())
