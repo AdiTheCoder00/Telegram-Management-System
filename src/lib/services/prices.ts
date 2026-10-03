@@ -45,11 +45,15 @@ export async function getDisplayPrice(provider: string, symbol: string, userId: 
 }
 
 /** Feeds ticks through the engine and enqueues any resulting deliveries. */
-export async function ingestTicks(provider: string, scope: string, ticks: { symbol: string; price: number; time?: Date }[]) {
+export async function ingestTicks(
+  provider: string,
+  scope: string,
+  ticks: { symbol: string; price: number; time?: Date; fromBar?: boolean }[],
+) {
   const results = [];
   const deliveryIds: string[] = [];
   for (const t of ticks) {
-    const r = await processPriceTick({ provider, scope, symbol: t.symbol, price: t.price, time: t.time });
+    const r = await processPriceTick({ provider, scope, symbol: t.symbol, price: t.price, time: t.time, fromBar: t.fromBar });
     results.push({ symbol: t.symbol, quote: r.quote, evaluated: r.evaluated, triggered: r.triggered.length });
     for (const tr of r.triggered) if (tr.deliveryId) deliveryIds.push(tr.deliveryId);
   }

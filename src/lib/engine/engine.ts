@@ -17,6 +17,8 @@ export interface TickInput {
   symbol: string;
   price: number;
   time?: Date;
+  /** Price derived from a pushed OHLC bar: the bar itself is the candle, so no 1m tick candle is built. */
+  fromBar?: boolean;
 }
 
 export interface Triggered {
@@ -181,9 +183,10 @@ export async function processPriceTick(input: TickInput): Promise<TickResult> {
     logger.debug("Tick ignored", { ...input, quote });
     return { quote, evaluated: 0, triggered: [] };
   }
-  await recordTickCandle(input.provider, input.scope, input.symbol, input.price, time).catch((err) =>
-    logger.warn("Tick candle update failed", { err: String(err) }),
-  );
+  if (!input.fromBar)
+    await recordTickCandle(input.provider, input.scope, input.symbol, input.price, time).catch((err) =>
+      logger.warn("Tick candle update failed", { err: String(err) }),
+    );
 
   const alerts = await db.alert.findMany({
     where: {

@@ -36,7 +36,7 @@ export interface SeriesResult {
   candles: Candle[];
   issues: DataIssue[];
   freshness: Freshness;
-  source: "provider" | "aggregated" | "ticks" | "synthetic";
+  source: "provider" | "aggregated" | "ticks" | "pushed" | "synthetic";
   provider: string;
   fetchedAt: string;
   /** Set when the provider failed and cached data was served instead. */
@@ -206,12 +206,26 @@ export async function recordTickCandle(provider: string, scope: string, symbol: 
       "updatedAt" = EXCLUDED."updatedAt"`;
 }
 
+/**
+ * OHLC bars pushed by a webhook (TradingView bar payloads) for exactly this timeframe. Preferred over tick
+ * candles: they are the source's own bars, with real OHLC and volume.
+ */
+async function pushedCandles(provider: string, scope: string | undefined, symbol: string, tf: Timeframe, asOf: number, bars: number) {
+  if (!scope || scope === GLOBAL) return [];
+  const rows = await db.candle.findMany({
+    where: { provider, scope, symbol, timeframe: tf, volumeType: { not: "TICK" }, openTime: { lte: new Date(asOf) } },
+    orderBy: { openTime: "desc" },
+    take: bars + 1,
+  });
+  return rows.reverse().map((r) => rowToCandle(r, tf));
+}
+
 async function tickCandles(provider: string, scope: string | undefined, symbol: string, tf: Timeframe, asOf: number, bars: number) {
   const ratio = Math.max(1, Math.round(timeframeMs(tf) / 60_000));
   const take = Math.min(20_000, (bars + 1) * ratio);
   const load = (s: string) =>
     db.candle.findMany({
-      where: { provider, scope: s, symbol, timeframe: "1m", openTime: { lte: new Date(asOf) } },
+      where: { provider, scope: s, symbol, timeframe: "1m", volumeType: "TICK", openTime: { lte: new Date(asOf) } },
       orderBy: { openTime: "desc" },
       take,
     });
@@ -251,8 +265,14 @@ export async function getSeries(req: SeriesRequest): Promise<SeriesResult> {
       source = "aggregated";
       providerError = r.providerError;
     } else {
-      raw = await tickCandles(p.key, req.scope, req.symbol, tf, req.asOf, req.bars);
-      source = "ticks";
+      const pushed = await pushedCandles(p.key, req.scope, req.symbol, tf, req.asOf, req.bars);
+      if (pushed.length) {
+        raw = pushed;
+        source = "pushed";
+      } else {
+        raw = await tickCandles(p.key, req.scope, req.symbol, tf, req.asOf, req.bars);
+        source = "ticks";
+      }
     }
   }
 
