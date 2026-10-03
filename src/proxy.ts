@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * Local mode (AUTH_MODE=local, loopback-bound server, localhost Host — see src/lib/auth/local-mode.ts):
  * no sign-in, so /login and /register lead straight to the dashboard.
  */
-const PROTECTED = ["/dashboard", "/alerts", "/bots", "/history", "/settings"];
+const PROTECTED = ["/dashboard", "/alerts", "/backtest", "/bots", "/history", "/settings", "/system"];
 const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
 
 function localAccess(req: NextRequest) {

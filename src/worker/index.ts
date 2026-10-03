@@ -22,6 +22,7 @@ import { purgeExpiredSessions } from "@/lib/services/auth";
 import { processDelivery, sweepDueDeliveries } from "@/lib/notifications/delivery";
 import { pollOnce } from "@/lib/services/prices";
 import { pruneCandles } from "@/lib/market/service";
+import { failInterruptedBacktests, runNextBacktest } from "@/lib/services/backtests";
 import { closeQueues, enqueueDeliveries, ENGINE_QUEUE, TELEGRAM_QUEUE } from "@/lib/queue";
 import { closeRedis } from "@/lib/queue/redis";
 
@@ -143,6 +144,13 @@ async function main() {
   every(60 * 60_000, "session purge", async () => {
     const n = await purgeExpiredSessions();
     if (n) logger.info("Purged expired sessions", { count: n });
+  });
+  // Backtests: one at a time per worker, claimed atomically (FOR UPDATE SKIP LOCKED). This assumes a single
+  // worker process for the "interrupted" sweep below (personal deployment); runs are idempotent to repeat.
+  const interrupted = await failInterruptedBacktests();
+  if (interrupted) logger.warn("Marked interrupted backtests as failed", { count: interrupted });
+  every(2_000, "backtests", async () => {
+    while (!shuttingDown && (await runNextBacktest()));
   });
   every(60 * 60_000, "candle prune", async () => {
     const n = await pruneCandles();

@@ -19,6 +19,7 @@ import {
   Settings,
   Sun,
   X,
+  FlaskConical,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/alerts", label: "Alerts", icon: ListChecks },
   { href: "/alerts/new", label: "Add Alert", icon: Plus },
+  { href: "/backtest", label: "Backtest", icon: FlaskConical },
   { href: "/bots", label: "Telegram Bots", icon: Bot },
   { href: "/history", label: "Alert History", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
