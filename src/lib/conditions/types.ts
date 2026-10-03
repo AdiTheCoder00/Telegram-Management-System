@@ -15,7 +15,8 @@ import { getIndicator, resolveParams } from "@/lib/indicators/registry";
  *
  * Every node carries an `id` so evaluation results (trigger evidence) can be matched back to the tree.
  */
-export const EVALUATION_ENGINE_VERSION = "1.0.0";
+// 1.1.0: crossings use ta.crossover semantics (prev <= and now >), see evaluate.ts.
+export const EVALUATION_ENGINE_VERSION = "1.1.0";
 
 const tf = z.enum(TIMEFRAMES);
 const id = z.string().min(1).max(40);

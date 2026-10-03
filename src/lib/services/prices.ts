@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { getProvider } from "@/lib/market-data/registry";
 import { MarketDataError, type SymbolRef } from "@/lib/market-data/types";
-import { GLOBAL_SCOPE, latestQuote } from "@/lib/engine/quotes";
+import { GLOBAL_SCOPE, latestQuote, recordQuote } from "@/lib/engine/quotes";
+import { allowProviderRequest } from "@/lib/market/service";
 import { expireDueAlerts, processPriceTick, releaseFinishedCooldowns } from "@/lib/engine/engine";
 import { enqueueDeliveries } from "@/lib/queue";
 import { evaluateConditionAlerts } from "@/lib/engine/condition-engine";
@@ -30,9 +31,20 @@ export async function getDisplayPrice(provider: string, symbol: string, userId: 
   if (p.pushOnly) return { price: null, updatedAt: null, error: "No price received yet. Send one to the webhook endpoint." };
   if (!p.isConfigured())
     return { price: cached?.price ?? null, updatedAt: cached?.updatedAt ?? null, error: `${p.label} is not configured.` };
+  // The display path shares the per-provider request budget with the candle service: without it, a form polling
+  // every few seconds would exhaust a rate-limited provider (e.g. Twelve Data's 8/min free tier) on its own.
+  if (!(await allowProviderRequest(p))) {
+    return {
+      price: cached?.price ?? null,
+      updatedAt: cached?.updatedAt ?? null,
+      error: cached ? null : "Market data is temporarily unavailable for this symbol.",
+    };
+  }
   try {
     const [ref] = await symbolRefs([symbol]);
     const price = await p.getPrice(ref);
+    // Best-effort cache write: the next polls are served from the quote cache even if this write fails.
+    await recordQuote(provider, GLOBAL_SCOPE, symbol, price, new Date()).catch(() => undefined);
     return { price, updatedAt: new Date(), error: null };
   } catch (err) {
     logger.warn("Live price fetch failed", { provider, symbol, err: String(err) });

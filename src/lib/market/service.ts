@@ -88,8 +88,11 @@ export async function recordProviderFailure(provider: string, error: string) {
     .catch(() => undefined);
 }
 
-/** Per-provider request budget (Twelve Data free tier: 8/min). Shared across processes when Redis is set. */
-async function allowRequest(p: MarketDataProvider) {
+/**
+ * Per-provider request budget (Twelve Data free tier: 8/min). Shared across processes when Redis is set.
+ * Used by both candle fetches and display-price fetches, so an open form cannot hammer a provider.
+ */
+export async function allowProviderRequest(p: MarketDataProvider) {
   if (p.capabilities.synthetic) return true;
   const perMin = Number(p.key === "twelvedata" ? (process.env.TWELVE_DATA_RATE_LIMIT_PER_MIN ?? 8) : 60);
   return (await rateLimit(`provider:${p.key}`, perMin, 60_000)).ok;
@@ -123,7 +126,7 @@ async function nativeCandles(p: MarketDataProvider, symbol: string, tf: Timefram
   const historical = asOf < Date.now() - 2 * timeframeMs(tf);
   if (!force && haveEnough && (upToDate || historical)) return { candles: cached, source: "provider" as const, providerError: undefined };
 
-  if (!(await allowRequest(p))) {
+  if (!(await allowProviderRequest(p))) {
     return { candles: cached, source: "provider" as const, providerError: "Provider request budget exhausted; serving cached candles." };
   }
   // Fetch only what's missing when the cache is warm; the full window otherwise.

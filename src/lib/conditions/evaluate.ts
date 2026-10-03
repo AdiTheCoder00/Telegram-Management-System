@@ -238,7 +238,9 @@ export function evaluateNode(node: ConditionNode, ctx: EvaluationContext): NodeR
               right,
               reason: "A crossing needs the previous bar's values too.",
             };
-          result = node.op === "crosses_above" ? pL < pR - EPS && L >= R - EPS : pL > pR + EPS && L <= R + EPS;
+          // TradingView ta.crossover/crossunder semantics: was at-or-below (above), is now strictly above (below).
+          // A series resting on the line and then moving off it crosses; merely touching the line does not.
+          result = node.op === "crosses_above" ? pL <= pR + EPS && L > R + EPS : pL >= pR - EPS && L < R - EPS;
         }
       }
       return { id: node.id, type: "compare", result, label, left, right };

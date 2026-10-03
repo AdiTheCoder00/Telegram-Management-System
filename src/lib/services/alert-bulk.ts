@@ -85,9 +85,11 @@ export async function exportAlerts(userId: string, ids?: string[]) {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     alerts: alerts.map((a) => {
-      const { telegramBotId: _bot, ...config } = configSnapshot(a);
+      const { telegramBotId: _bot, targetPrice, tolerance, ...config } = configSnapshot(a);
       void _bot;
-      return { ...config, group: a.group?.name ?? null, botName: a.bot?.name ?? null };
+      // Condition alerts have no price target (stored as 0) — leave it out so the file re-imports cleanly.
+      const target = a.kind === "CONDITIONS" ? {} : { targetPrice, tolerance };
+      return { ...config, ...target, group: a.group?.name ?? null, botName: a.bot?.name ?? null };
     }),
   };
 }
@@ -111,6 +113,8 @@ export async function importAlerts(userId: string, file: z.infer<typeof importSc
   const parsed = file.alerts.map((raw, i) => {
     const { group, botName, ...rest } = raw as Record<string, unknown> & { group?: string | null; botName?: string | null };
     const botId = bots.find((b) => b.name === botName)?.id ?? null;
+    // Older exports wrote targetPrice 0 for condition alerts; it means "no target".
+    if (rest.kind === "CONDITIONS" && !rest.targetPrice) delete rest.targetPrice;
     const r = alertInputSchema.safeParse({ ...rest, telegramBotId: botId, status: "PAUSED", expiresAt: rest.expiresAt ?? null });
     return { i, group: group ?? null, result: r };
   });

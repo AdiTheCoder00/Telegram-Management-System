@@ -95,6 +95,14 @@ describe("comparisons and crossings", () => {
     expect(evaluateConditions(node, ctxFor(closes, endOfBar(4))).result).toBe(false); // 3901 → 3902 (already above)
     expect(evaluateConditions(node, ctxFor(closes, endOfBar(2))).result).toBe(false);
   });
+  it("crossing boundaries follow ta.crossover: leaving the line crosses, touching it does not", () => {
+    const up: ConditionNode = { id: "x", type: "compare", left: price(), op: "crosses_above", right: value(3900) };
+    expect(evaluateConditions(up, ctxFor([3900, 3901], endOfBar(1))).result).toBe(true); // on the line → above
+    expect(evaluateConditions(up, ctxFor([3899, 3900], endOfBar(1))).result).toBe(false); // touch from below
+    const down: ConditionNode = { id: "y", type: "compare", left: price(), op: "crosses_below", right: value(3900) };
+    expect(evaluateConditions(down, ctxFor([3900, 3899], endOfBar(1))).result).toBe(true);
+    expect(evaluateConditions(down, ctxFor([3901, 3900], endOfBar(1))).result).toBe(false);
+  });
   it("detects a jump straight across the level", () => {
     const node: ConditionNode = { id: "x", type: "compare", left: price(), op: "crosses_below", right: value(3900) };
     expect(evaluateConditions(node, ctxFor([3950, 3850], endOfBar(1))).result).toBe(true);
