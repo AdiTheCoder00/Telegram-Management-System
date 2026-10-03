@@ -35,7 +35,7 @@ export async function getDashboard(userId: string, timezone: string) {
   const since = startOfDayInTz(timezone);
   const [total, active, triggeredToday, allBots, recent, recentEvents, failed24h, engine] = await Promise.all([
     db.alert.count({ where: { userId } }),
-    db.alert.count({ where: { userId, status: "ACTIVE" } }),
+    db.alert.count({ where: { userId, status: { in: ["ACTIVE", "COOLDOWN"] } } }),
     db.alertEvent.count({ where: { userId, isTest: false, triggeredAt: { gte: since } } }),
     db.telegramBot.findMany({ where: { userId }, select: { status: true, name: true, lastError: true, enabled: true } }),
     db.alert.findMany({

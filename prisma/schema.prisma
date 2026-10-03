@@ -40,6 +40,10 @@ enum AlertStatus {
   TRIGGERED
   EXPIRED
   ERROR
+  /// Saved but not yet activated — never evaluated until activation validation passes.
+  DRAFT
+  /// Post-trigger cooldown window (engine-managed; returns to ACTIVE when the window passes).
+  COOLDOWN
 }
 
 enum ParseMode {

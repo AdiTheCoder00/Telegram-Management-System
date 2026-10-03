@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conditionMet, evaluate, type AlertState } from "@/lib/engine/evaluate";
+import { conditionMet, evaluate, inCooldownWindow, type AlertState } from "@/lib/engine/evaluate";
 
 const T0 = new Date("2026-10-03T14:00:00Z");
 const at = (sec: number) => new Date(T0.getTime() + sec * 1000);
@@ -117,6 +117,62 @@ describe("anti-repeat", () => {
   });
 });
 
+describe("cooldown state (DRAFT/COOLDOWN lifecycle)", () => {
+  it("inCooldownWindow is false without a cooldown or a previous trigger, and true only inside the window", () => {
+    expect(inCooldownWindow({ cooldownSeconds: 0, lastTriggeredAt: at(0) }, at(1))).toBe(false);
+    expect(inCooldownWindow({ cooldownSeconds: 60, lastTriggeredAt: null }, at(1))).toBe(false);
+    expect(inCooldownWindow({ cooldownSeconds: 60, lastTriggeredAt: at(0) }, at(59))).toBe(true);
+    expect(inCooldownWindow({ cooldownSeconds: 60, lastTriggeredAt: at(0) }, at(60))).toBe(false);
+  });
+
+  it("a trigger with a cooldown parks the alert in COOLDOWN; without one it stays ACTIVE", () => {
+    expect(evaluate(state({ cooldownSeconds: 60 }), 3901, at(0)).next.status).toBe("COOLDOWN");
+    expect(evaluate(state({ cooldownSeconds: 0 }), 3901, at(0)).next.status).toBe("ACTIVE");
+  });
+
+  it("terminal states win over the post-trigger cooldown", () => {
+    expect(evaluate(state({ triggerMode: "ONCE", cooldownSeconds: 60 }), 3901, at(0)).next.status).toBe("TRIGGERED");
+    expect(evaluate(state({ expiryType: "AFTER_FIRST_TRIGGER", cooldownSeconds: 60 }), 3901, at(0)).next.status).toBe("EXPIRED");
+  });
+
+  it("COOLDOWN returns to ACTIVE once the window passes", () => {
+    let s: AlertState = { ...state({ cooldownSeconds: 60 }) };
+    let ev = evaluate(s, 3901, at(0));
+    expect(ev.trigger).toBe(true);
+    expect(ev.next.status).toBe("COOLDOWN");
+    s = { ...s, ...ev.next };
+
+    // Inside the window: no trigger, still COOLDOWN (REARM stays disarmed while price is above).
+    ev = evaluate(s, 3901, at(30));
+    expect(ev.trigger).toBe(false);
+    expect(ev.next.status).toBe("COOLDOWN");
+
+    // Window over: the alert is live again.
+    ev = evaluate(s, 3901, at(61));
+    expect(ev.next.status).toBe("ACTIVE");
+  });
+
+  it("an EVERY_TIME alert fires again once its window ends", () => {
+    let s: AlertState = { ...state({ triggerMode: "EVERY_TIME", cooldownSeconds: 60 }) };
+    let ev = evaluate(s, 3901, at(0));
+    expect(ev.trigger).toBe(true);
+    expect(ev.next.status).toBe("COOLDOWN");
+    s = { ...s, ...ev.next };
+
+    expect(evaluate(s, 3901, at(30)).trigger).toBe(false);
+    ev = evaluate(s, 3901, at(61));
+    expect(ev.trigger).toBe(true);
+    expect(ev.next.status).toBe("COOLDOWN");
+  });
+
+  it("an ACTIVE alert inside a window reports COOLDOWN and consumes the crossing", () => {
+    const ev = evaluate(state({ cooldownSeconds: 60, lastTriggeredAt: at(0), armed: true }), 3905, at(30));
+    expect(ev.reason).toBe("cooldown");
+    expect(ev.next.status).toBe("COOLDOWN");
+    expect(ev.next.armed).toBe(false);
+  });
+});
+
 describe("cooldown", () => {
   it("suppresses triggers inside the cooldown window even after re-arm", () => {
     const { fired } = run(state({ cooldownSeconds: 30 }), [3895, 3901, 3895, 3902, 3895, 3895, 3895, 3903], 5);
@@ -146,6 +202,14 @@ describe("cooldown", () => {
 describe("status and expiry", () => {
   it("paused alerts never trigger", () => {
     expect(evaluate(state({ status: "PAUSED" }), 4000).trigger).toBe(false);
+  });
+
+  it("DRAFT alerts never evaluate — even when the condition is met", () => {
+    const { fired, final } = run(state({ status: "DRAFT" }), [3895, 3901, 3901, 3895, 3902]);
+    expect(fired).toEqual([]);
+    expect(final.status).toBe("DRAFT");
+    // The last price is not advanced either: a crosses alert activated later needs a fresh crossing.
+    expect(final.lastPrice).toBeNull();
   });
 
   it("expires at a specific date", () => {

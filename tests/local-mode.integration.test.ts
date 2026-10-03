@@ -81,7 +81,10 @@ describe("local-mode access", () => {
 
   it("keeps CSRF protection for state-changing requests from other sites", async () => {
     localMode(true);
-    const res = await alerts.POST(req("/api/alerts", "localhost:3000", { method: "POST", body: {}, origin: "https://evil.example" }), ctx());
+    const res = await alerts.POST(
+      req("/api/alerts", "localhost:3000", { method: "POST", body: {}, origin: "https://evil.example" }),
+      ctx(),
+    );
     expect(res.status).toBe(403);
   });
 

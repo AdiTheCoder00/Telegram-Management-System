@@ -91,7 +91,8 @@ export function checkEnv(): EnvReport {
   const authMode = process.env.AUTH_MODE || "password";
   if (!["password", "local"].includes(authMode)) errors.push(`AUTH_MODE must be "password" or "local" (got "${authMode}").`);
   if (authMode === "local") {
-    if (process.env.LEVELS_LOOPBACK_ONLY === "1") warnings.push("AUTH_MODE=local: no sign-in for http://localhost (server bound to 127.0.0.1 only).");
+    if (process.env.LEVELS_LOOPBACK_ONLY === "1")
+      warnings.push("AUTH_MODE=local: no sign-in for http://localhost (server bound to 127.0.0.1 only).");
     else
       warnings.push(
         "AUTH_MODE=local is ignored: this server was not started with `npm run dev` / `npm run start:local` (loopback-only), so sign-in stays required.",

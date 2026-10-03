@@ -99,7 +99,9 @@ function LocalModeSecurity() {
           {error ? (
             <p className="mt-1 text-xs text-destructive">{error}</p>
           ) : (
-            <p className="mt-1 text-xs text-muted-foreground">At least 10 characters, with a letter and a number. Not needed while local mode is on.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              At least 10 characters, with a letter and a number. Not needed while local mode is on.
+            </p>
           )}
         </div>
         <Button type="submit" variant="outline" disabled={saving || !next}>

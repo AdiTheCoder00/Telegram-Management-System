@@ -162,7 +162,7 @@ export async function deleteBot(userId: string, id: string) {
   await getOwnedBot(userId, id);
   const affected = await db.$transaction(async (tx) => {
     const res = await tx.alert.updateMany({
-      where: { userId, telegramBotId: id, status: { in: ["ACTIVE", "PAUSED"] } },
+      where: { userId, telegramBotId: id, status: { in: ["ACTIVE", "COOLDOWN", "PAUSED"] } },
       data: {
         status: "ERROR",
         lastError: "The Telegram bot for this alert was deleted. Edit the alert and choose another bot.",

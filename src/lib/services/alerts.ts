@@ -55,7 +55,8 @@ export async function getOwnedAlert(userId: string, id: string) {
 
 export async function listAlerts(userId: string, q: z.infer<typeof alertListQuerySchema> = {}) {
   const where: Prisma.AlertWhereInput = { userId };
-  if (q.status) where.status = q.status;
+  // "Active" means live alerts: ACTIVE plus those riding out a post-trigger cooldown.
+  if (q.status) where.status = q.status === "ACTIVE" ? { in: ["ACTIVE", "COOLDOWN"] } : q.status;
   if (q.symbol) where.symbol = q.symbol;
   if (q.botId) where.telegramBotId = q.botId;
   if (q.q) where.OR = [{ name: { contains: q.q, mode: "insensitive" } }, { symbol: { contains: q.q.toUpperCase() } }];
@@ -83,6 +84,32 @@ async function validateAlertInput(userId: string, input: AlertInput) {
   const issues = validateTemplate(input.messageTemplate, input.parseMode, SAMPLE_VARS).filter((i) => i.level === "error");
   if (issues.length)
     throw new AppError(400, "The Telegram message has problems. Please fix them before saving.", "validation_error", {
+      fieldErrors: { messageTemplate: issues[0].message },
+      issues,
+    });
+}
+
+/**
+ * Authoritative activation gate (spec 0.34): an alert may not become ACTIVE until its stored
+ * configuration validates — symbol, provider capability, condition/thresholds (enforced by the zod
+ * schema at write time), notification config, template, cooldown and expiration. Used by every path
+ * that moves an alert into ACTIVE (create/update run the same checks through validateAlertInput).
+ */
+async function assertActivatable(userId: string, a: Alert) {
+  if (!a.symbol.trim()) throw badRequest("This alert has no symbol. Edit it before activating.");
+  if (!isValidProvider(a.dataProvider))
+    throw badRequest("This alert uses a market-data provider that no longer exists. Edit it before activating.");
+  if (!Number.isFinite(a.targetPrice) || a.targetPrice <= 0)
+    throw badRequest("This alert has no valid target price. Edit it before activating.");
+  if (a.cooldownSeconds < 0) throw badRequest("This alert has an invalid cooldown. Edit it before activating.");
+  if (isExpiredByDate(a, new Date())) throw badRequest("This alert's expiry date has passed. Edit the alert to set a new date.");
+  if (!a.telegramBotId) throw badRequest("Assign a Telegram bot to this alert before activating it.");
+  const bot = await db.telegramBot.findFirst({ where: { id: a.telegramBotId, userId }, select: { enabled: true } });
+  if (!bot) throw badRequest("The Telegram bot assigned to this alert no longer exists. Choose another bot.");
+  if (!bot.enabled) throw badRequest("This alert’s Telegram bot is disabled. Enable the bot before activating the alert.");
+  const issues = validateTemplate(a.messageTemplate, a.parseMode, SAMPLE_VARS).filter((i) => i.level === "error");
+  if (issues.length)
+    throw new AppError(400, "The Telegram message has problems. Fix them before activating this alert.", "validation_error", {
       fieldErrors: { messageTemplate: issues[0].message },
       issues,
     });
@@ -133,7 +160,9 @@ export async function updateAlert(userId: string, id: string, input: AlertInput)
 
   // Status: honour Active/Paused from the form. Editing a Triggered/Expired/Error alert and saving it
   // as Active re-activates it with a fresh trigger budget.
-  const reactivating = input.status === "ACTIVE" && existing.status !== "ACTIVE";
+  // COOLDOWN is live (not a reactivation): editing it must not reset its trigger budget or cooldown.
+  const wasLive = existing.status === "ACTIVE" || existing.status === "COOLDOWN";
+  const reactivating = input.status === "ACTIVE" && !wasLive;
   if (input.status === "ACTIVE" && isExpiredByDate({ expiryType: data.expiryType, expiresAt: data.expiresAt }, new Date()))
     throw badRequest("The expiry date is in the past.");
 
@@ -141,7 +170,8 @@ export async function updateAlert(userId: string, id: string, input: AlertInput)
     where: { id },
     data: {
       ...data,
-      status: input.status,
+      // Saving a cooling-down alert as "Active" keeps it in COOLDOWN; the engine releases it when the window ends.
+      status: wasLive && input.status === "ACTIVE" ? existing.status : input.status,
       version: { increment: 1 },
       ...(watchChanged || reactivating ? { armed: true, lastPrice: null } : {}),
       ...(reactivating ? { triggerCount: 0, lastError: null } : {}),
@@ -162,16 +192,15 @@ export async function pauseAlert(userId: string, id: string) {
 }
 
 /**
- * Resumes an alert. The alert is re-armed and its last price cleared, so a "crosses" alert needs a
- * fresh crossing and an "above" alert fires again only if price is (still) above the target.
+ * Resumes/activates an alert (PAUSED, DRAFT, TRIGGERED, EXPIRED, ERROR → ACTIVE). The full
+ * activation validation (spec 0.34) must pass first. The alert is re-armed and its last price
+ * cleared, so a "crosses" alert needs a fresh crossing and an "above" alert fires again only if
+ * price is (still) above the target.
  */
 export async function resumeAlert(userId: string, id: string) {
   const a = await getOwnedAlert(userId, id);
-  if (isExpiredByDate(a, new Date())) throw badRequest("This alert's expiry date has passed. Edit the alert to set a new date.");
-  if (!a.telegramBotId) throw badRequest("Assign a Telegram bot to this alert before resuming it.");
-  const bot = await db.telegramBot.findUnique({ where: { id: a.telegramBotId }, select: { enabled: true } });
-  if (bot && !bot.enabled) throw badRequest("This alert’s Telegram bot is disabled. Enable the bot before resuming the alert.");
-  const resetBudget = a.status === "TRIGGERED" || a.status === "EXPIRED";
+  await assertActivatable(userId, a);
+  const resetBudget = a.status === "TRIGGERED" || a.status === "EXPIRED" || a.status === "DRAFT";
   const alert = await db.alert.update({
     where: { id },
     data: {

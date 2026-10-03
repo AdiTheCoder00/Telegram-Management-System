@@ -113,7 +113,13 @@ export async function callTelegram<T>(token: string, method: string, body: Recor
     const migrateTo = json.parameters?.migrate_to_chat_id;
     const kind = classify(status, description, migrateTo);
     logger.warn("Telegram API error", { method, status, description });
-    throw new TelegramError(kind, description, status, json.parameters?.retry_after, migrateTo !== undefined ? String(migrateTo) : undefined);
+    throw new TelegramError(
+      kind,
+      description,
+      status,
+      json.parameters?.retry_after,
+      migrateTo !== undefined ? String(migrateTo) : undefined,
+    );
   }
   return json.result as T;
 }

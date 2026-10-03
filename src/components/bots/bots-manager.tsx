@@ -81,9 +81,7 @@ export function BotsManager({ bots }: { bots: BotDTO[] }) {
     try {
       await api(`/api/telegram/bots/${b.id}`, { method: "PUT", body: { enabled } });
       toast.success(
-        enabled
-          ? `${b.name} enabled`
-          : `${b.name} disabled. Its alerts still trigger and are recorded, but no messages are sent.`,
+        enabled ? `${b.name} enabled` : `${b.name} disabled. Its alerts still trigger and are recorded, but no messages are sent.`,
       );
       router.refresh();
     } catch (err) {

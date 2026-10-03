@@ -9,7 +9,10 @@ export const PUT = route(async ({ req, user }) => {
   const input = await parseBody(req, settingsSchema);
   if (input.email && input.email !== user.email) {
     const taken = await db.user.findUnique({ where: { email: input.email }, select: { id: true } });
-    if (taken) throw new AppError(409, "That email is already used by another account.", "email_taken", { fieldErrors: { email: "Already in use." } });
+    if (taken)
+      throw new AppError(409, "That email is already used by another account.", "email_taken", {
+        fieldErrors: { email: "Already in use." },
+      });
   }
   const updated = await db.user.update({
     where: { id: user.id },

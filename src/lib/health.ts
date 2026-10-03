@@ -69,7 +69,7 @@ type FeedState = "FRESH" | "STALE" | "NO_DATA" | "SIMULATED" | "PUSH";
 
 export async function checkMarketData(): Promise<ComponentHealth> {
   try {
-    const feeds = await db.alert.groupBy({ by: ["dataProvider", "symbol"], where: { status: "ACTIVE" } });
+    const feeds = await db.alert.groupBy({ by: ["dataProvider", "symbol"], where: { status: { in: ["ACTIVE", "COOLDOWN"] } } });
     if (!feeds.length) return { status: "NOT_CONFIGURED", checkedAt: now(), detail: "No active alerts need market data.", feeds: [] };
 
     const quotes = await db.quote.findMany({

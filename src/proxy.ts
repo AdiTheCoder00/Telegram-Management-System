@@ -11,9 +11,7 @@ const PROTECTED = ["/dashboard", "/alerts", "/bots", "/history", "/settings"];
 const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
 
 function localAccess(req: NextRequest) {
-  return (
-    process.env.AUTH_MODE === "local" && process.env.LEVELS_LOOPBACK_ONLY === "1" && LOOPBACK_HOST.test(req.headers.get("host") ?? "")
-  );
+  return process.env.AUTH_MODE === "local" && process.env.LEVELS_LOOPBACK_ONLY === "1" && LOOPBACK_HOST.test(req.headers.get("host") ?? "");
 }
 
 export function proxy(req: NextRequest) {

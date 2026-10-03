@@ -113,7 +113,7 @@ const alertBase = z.object({
   expiryType: z.enum(EXPIRY_TYPES).default("NEVER"),
   expiresAt: z.coerce.date().nullable().optional(),
   maxTriggers: z.coerce.number().int().min(1).max(100_000).nullable().optional(),
-  status: z.enum(["ACTIVE", "PAUSED"]).default("ACTIVE"),
+  status: z.enum(["ACTIVE", "PAUSED", "DRAFT"]).default("ACTIVE"),
 });
 
 type AlertBase = z.infer<typeof alertBase>;
