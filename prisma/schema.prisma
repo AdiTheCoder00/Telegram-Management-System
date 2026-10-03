@@ -1,0 +1,297 @@
+// Telegram Alert Manager — database schema
+// Prisma 7: the connection URL lives in prisma.config.ts, the client is generated into src/generated.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum ConditionType {
+  PRICE_ABOVE
+  PRICE_BELOW
+  CROSSES_ABOVE
+  CROSSES_BELOW
+  PRICE_EQUALS
+  // Future: RSI_ABOVE, EMA_CROSS, MACD_CROSS, VOLUME_SPIKE … (use Alert.conditionParams)
+}
+
+enum TriggerMode {
+  ONCE
+  EVERY_TIME
+  REARM
+}
+
+enum ExpiryType {
+  NEVER
+  AFTER_FIRST_TRIGGER
+  AT_DATE
+  AFTER_N_TRIGGERS
+}
+
+enum AlertStatus {
+  ACTIVE
+  PAUSED
+  TRIGGERED
+  EXPIRED
+  ERROR
+}
+
+enum ParseMode {
+  PLAIN
+  MARKDOWN
+  MARKDOWN_V2
+  HTML
+}
+
+enum BotStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  // Future: DISCORD, WHATSAPP, EMAIL, SMS
+}
+
+// ───────────────────────────── Auth ─────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  timezone     String   @default("UTC")
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  sessions   Session[]
+  bots       TelegramBot[]
+  alerts     Alert[]
+  events     AlertEvent[]
+  deliveries TelegramDelivery[]
+  apiKeys    ApiKey[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique // HMAC-SHA256 of the cookie value; raw token never stored
+  expiresAt DateTime @db.Timestamptz(3)
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Per-user API keys for authenticating price webhooks (TradingView etc.).
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  prefix     String // first chars, shown in UI to identify the key
+  keyHash    String    @unique
+  lastUsedAt DateTime? @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─────────────────────────── Telegram ───────────────────────────
+
+model TelegramBot {
+  id             String    @id @default(cuid())
+  userId         String
+  name           String
+  encryptedToken String // AES-256-GCM, never returned by the API
+  tokenHint      String // last 4 chars, for display only
+  botUsername    String?
+  chatId         String
+  chatTitle      String?
+  status         BotStatus @default(DISCONNECTED)
+  lastError      String?
+  lastCheckedAt  DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts     Alert[]
+  deliveries TelegramDelivery[]
+
+  @@index([userId])
+}
+
+// ──────────────────────────── Market ────────────────────────────
+
+/// Known instruments and how each maps onto a market-data provider.
+/// Alerts may still use symbols that are not listed here (custom symbols).
+model Instrument {
+  id             String   @id @default(cuid())
+  symbol         String   @unique
+  displayName    String
+  assetClass     String // forex, crypto, metal, index …
+  exchange       String?
+  provider       String // default provider key for this symbol
+  providerSymbol String? // symbol as the provider expects it (e.g. XAU/USD, BTCUSDT)
+  decimals       Int      @default(2)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+}
+
+/// Latest known price per (provider, scope, symbol).
+/// scope = "global" for shared feeds, or a userId for user-authenticated webhook feeds.
+model Quote {
+  provider   String
+  scope      String
+  symbol     String
+  price      Float
+  sourceTime DateTime @db.Timestamptz(3) // timestamp reported by the source
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  @@id([provider, scope, symbol])
+  @@index([symbol])
+}
+
+/// Idempotency ledger for webhook deliveries (duplicate requests are ignored).
+model WebhookReceipt {
+  id        String   @id @default(cuid())
+  scope     String
+  key       String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([scope, key])
+  @@index([createdAt])
+}
+
+// ──────────────────────────── Alerts ────────────────────────────
+
+model Alert {
+  id              String              @id @default(cuid())
+  userId          String
+  telegramBotId   String?
+  channel         NotificationChannel @default(TELEGRAM)
+  name            String
+  symbol          String
+  dataProvider    String // market-data provider key (simulated, binance, twelvedata, webhook, custom)
+  conditionType   ConditionType
+  conditionParams Json? // reserved for indicator alerts (RSI period, EMA lengths …)
+  targetPrice     Float
+  tolerance       Float               @default(0) // for PRICE_EQUALS
+  messageTemplate String
+  parseMode       ParseMode           @default(PLAIN)
+  status          AlertStatus         @default(ACTIVE)
+  triggerMode     TriggerMode         @default(REARM)
+  cooldownSeconds Int                 @default(60)
+  expiryType      ExpiryType          @default(NEVER)
+  expiresAt       DateTime?           @db.Timestamptz(3)
+  maxTriggers     Int?
+  triggerCount    Int                 @default(0)
+  lastTriggeredAt DateTime?           @db.Timestamptz(3)
+
+  // Engine state
+  armed           Boolean   @default(true) // false after a trigger until the condition resets (REARM)
+  lastPrice       Float? // last observed price, needed for cross detection
+  lastEvaluatedAt DateTime? @db.Timestamptz(3)
+  lastError       String?
+  version         Int       @default(0) // optimistic lock: prevents double triggers from concurrent ticks
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot        TelegramBot?       @relation(fields: [telegramBotId], references: [id], onDelete: SetNull)
+  events     AlertEvent[]
+  deliveries TelegramDelivery[]
+
+  @@index([userId, status])
+  @@index([status, dataProvider, symbol])
+  @@index([telegramBotId])
+}
+
+/// One row per trigger (or test). Snapshots alert fields so history survives alert deletion.
+model AlertEvent {
+  id            String         @id @default(cuid())
+  alertId       String?
+  userId        String
+  alertName     String
+  symbol        String
+  conditionType ConditionType
+  triggerPrice  Float
+  previousPrice Float?
+  targetPrice   Float
+  isTest        Boolean        @default(false)
+  status        DeliveryStatus @default(PENDING) // mirrors the delivery outcome
+  triggeredAt   DateTime       @default(now()) @db.Timestamptz(3)
+
+  alert      Alert?             @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries TelegramDelivery[]
+
+  @@index([userId, triggeredAt])
+  @@index([alertId, triggeredAt])
+  @@index([symbol])
+}
+
+/// Every outgoing Telegram message. Doubles as a transactional outbox: rows in PENDING
+/// are picked up by the worker (via the queue, or by the recovery sweep after a restart).
+model TelegramDelivery {
+  id                String         @id @default(cuid())
+  userId            String
+  alertId           String?
+  alertEventId      String?
+  telegramBotId     String?
+  chatId            String
+  message           String
+  parseMode         ParseMode      @default(PLAIN)
+  isTest            Boolean        @default(false)
+  status            DeliveryStatus @default(PENDING)
+  telegramMessageId String?
+  error             String? // user-facing message
+  errorDetail       String? // technical detail (Telegram description), shown in logs only
+  attempts          Int            @default(0)
+  nextAttemptAt     DateTime       @default(now()) @db.Timestamptz(3)
+  lockedUntil       DateTime?      @db.Timestamptz(3)
+  sentAt            DateTime?      @db.Timestamptz(3)
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alert Alert?       @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  event AlertEvent?  @relation(fields: [alertEventId], references: [id], onDelete: SetNull)
+  bot   TelegramBot? @relation(fields: [telegramBotId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt])
+  @@index([userId, createdAt])
+  @@index([alertEventId])
+  @@index([alertId])
+}
+
+// ──────────────────────────── System ────────────────────────────
+
+/// Liveness record written by each worker process (shown on the dashboard as engine status).
+model WorkerHeartbeat {
+  id         String   @id // hostname:pid
+  startedAt  DateTime @db.Timestamptz(3)
+  lastSeenAt DateTime @db.Timestamptz(3)
+  info       Json?
+
+  @@index([lastSeenAt])
+}
