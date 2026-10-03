@@ -1,10 +1,13 @@
+import { NextResponse } from "next/server";
 import { route } from "@/lib/api";
-import { destroySession } from "@/lib/auth/session";
+import { clearSessionCookie, destroySessionByToken, SESSION_COOKIE } from "@/lib/auth/session";
 
 export const POST = route(
-  async () => {
-    await destroySession();
-    return { ok: true };
+  async ({ req }) => {
+    await destroySessionByToken(req.cookies.get(SESSION_COOKIE)?.value);
+    const res = NextResponse.json({ ok: true });
+    clearSessionCookie(res);
+    return res;
   },
   { auth: false },
 );

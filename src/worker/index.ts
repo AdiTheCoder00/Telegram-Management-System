@@ -18,6 +18,7 @@ import { Redis } from "ioredis";
 import { db, disconnectDb } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { checkEnv } from "@/lib/env";
+import { purgeExpiredSessions } from "@/lib/services/auth";
 import { processDelivery, sweepDueDeliveries } from "@/lib/notifications/delivery";
 import { pollOnce } from "@/lib/services/prices";
 import { closeQueues, enqueueDeliveries, ENGINE_QUEUE, TELEGRAM_QUEUE } from "@/lib/queue";
@@ -133,6 +134,10 @@ async function main() {
   }
   await db.$queryRaw`SELECT 1`; // fail fast if the database is unreachable
   every(10_000, "heartbeat", heartbeat);
+  every(60 * 60_000, "session purge", async () => {
+    const n = await purgeExpiredSessions();
+    if (n) logger.info("Purged expired sessions", { count: n });
+  });
   const url = process.env.REDIS_URL;
   if (url) await startWithRedis(url);
   else startWithoutRedis();

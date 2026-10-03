@@ -86,13 +86,14 @@ model User {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  tokenHash String   @unique // HMAC-SHA256 of the cookie value; raw token never stored
-  expiresAt DateTime @db.Timestamptz(3)
-  userAgent String?
-  ip        String?
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique // HMAC-SHA256 of the cookie value; raw token never stored
+  expiresAt  DateTime @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @db.Timestamptz(3)
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

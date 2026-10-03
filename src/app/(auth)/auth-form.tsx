@@ -22,6 +22,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     setError(null);
     setFieldErrors({});
     const form = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
+    // The owner account starts in the browser’s time zone (changeable in Settings).
+    if (mode === "register") form.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     try {
       await api(`/api/auth/${mode}`, { method: "POST", body: form });
       const next = params.get("next");
@@ -39,11 +41,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const isLogin = mode === "login";
   return (
     <div>
-      <h2 className="text-2xl font-semibold tracking-tight">{isLogin ? "Sign in" : "Create your account"}</h2>
+      <h2 className="text-2xl font-semibold tracking-tight">{isLogin ? "Sign in" : "Create the owner account"}</h2>
       <p className="mt-1.5 text-sm text-muted-foreground">
         {isLogin
           ? "Welcome back. Your alerts kept running while you were away."
-          : "Set up your first Telegram price alert in a few minutes."}
+          : "This is a personal installation: the first account becomes its owner and registration then closes."}
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-4" noValidate>
@@ -64,16 +66,18 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         )}
         <Button type="submit" size="lg" className="w-full" disabled={pending}>
           {pending && <Loader2 className="animate-spin" />}
-          {isLogin ? "Sign in" : "Create account"}
+          {isLogin ? "Sign in" : "Create owner account"}
         </Button>
       </form>
 
-      <p className="mt-6 text-sm text-muted-foreground">
-        {isLogin ? "New here? " : "Already have an account? "}
-        <Link href={isLogin ? "/register" : "/login"} className="font-medium text-foreground underline underline-offset-4">
-          {isLogin ? "Create an account" : "Sign in"}
-        </Link>
-      </p>
+      {!isLogin && (
+        <p className="mt-6 text-sm text-muted-foreground">
+          Already set up?{" "}
+          <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+            Sign in
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

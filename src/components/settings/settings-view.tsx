@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { RelativeTime } from "@/components/status";
+import { SecurityCard } from "@/components/settings/security-card";
 import { api, ApiError, errorMessage } from "@/lib/client-api";
 
 interface Key {
@@ -67,13 +68,17 @@ export function SettingsView({
     () => appUrl,
   );
 
+  // Browsers' list omits "UTC" (and may omit legacy aliases), so always include it and the saved zone —
+  // otherwise the select renders blank for those users.
   const zones = useMemo(() => {
+    let list: string[] = [];
     try {
-      return (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf("timeZone");
+      list = (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf("timeZone");
     } catch {
-      return ["UTC"];
+      /* very old browser */
     }
-  }, []);
+    return [...new Set(["UTC", user.timezone, ...list])];
+  }, [user.timezone]);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -223,6 +228,8 @@ export function SettingsView({
           </p>
         </div>
       </Card>
+
+      <SecurityCard />
 
       <ConfirmDialog
         open={!!revoking}
